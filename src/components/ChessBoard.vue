@@ -54,14 +54,28 @@ function buildConfig(): Config {
   }
 }
 
+// Chessground cached die Brett-Position (bounding box) und interpretiert Taps
+// relativ dazu. Verschiebt sich das Brett ohne Größenänderung – z. B. wenn der
+// Eval-Balken darüber ein-/ausgeblendet wird oder die Seite scrollt – wäre der
+// Cache veraltet und Taps landen auf dem falschen Feld. Darum wird der Cache
+// unmittelbar vor jeder Berührung geleert (Capture-Phase, läuft vor den
+// Chessground-Handlern); die Neuberechnung ist ein einzelnes getBoundingClientRect.
+function clearBoundsCache() {
+  api?.state.dom.bounds.clear()
+}
+
 onMounted(() => {
   if (!el.value) return
   api = Chessground(el.value, buildConfig())
+  el.value.addEventListener('touchstart', clearBoundsCache, { capture: true, passive: true })
+  el.value.addEventListener('mousedown', clearBoundsCache, { capture: true })
   resizeObserver = new ResizeObserver(() => api?.redrawAll())
   resizeObserver.observe(el.value)
 })
 
 onBeforeUnmount(() => {
+  el.value?.removeEventListener('touchstart', clearBoundsCache, { capture: true })
+  el.value?.removeEventListener('mousedown', clearBoundsCache, { capture: true })
   resizeObserver?.disconnect()
   api?.destroy()
   api = null
