@@ -14,7 +14,25 @@ const game = useGame()
 const settings = useSettings()
 const settingsOpen = ref(false)
 
-onMounted(() => void game.initApp())
+// Vollbild: blendet auf Android auch die Statusleiste aus.
+// (Auf dem iPhone unterstützt Safari die Fullscreen-API nicht – Button entfällt dort.)
+const fullscreenAvailable = typeof document.documentElement.requestFullscreen === 'function'
+const isFullscreen = ref(false)
+
+function toggleFullscreen() {
+  if (document.fullscreenElement) {
+    void document.exitFullscreen().catch(() => {})
+  } else {
+    void document.documentElement.requestFullscreen({ navigationUI: 'hide' }).catch(() => {})
+  }
+}
+
+onMounted(() => {
+  void game.initApp()
+  document.addEventListener('fullscreenchange', () => {
+    isFullscreen.value = document.fullscreenElement !== null
+  })
+})
 
 const tipCountLabel = computed(() => (game.tipsUnlimited ? '∞' : String(game.tipsLeft)))
 
@@ -51,6 +69,15 @@ function confirmNewGame() {
       <h1>♞ SchachTrainer</h1>
       <div class="topbar-right">
         <span class="tips-badge" title="Tipps übrig">💡 {{ tipCountLabel }}</span>
+        <button
+          v-if="fullscreenAvailable"
+          class="icon-btn fullscreen-btn"
+          :class="{ active: isFullscreen }"
+          :aria-label="isFullscreen ? 'Vollbild verlassen' : 'Vollbild'"
+          @click="toggleFullscreen"
+        >
+          ⛶
+        </button>
         <button class="icon-btn" aria-label="Einstellungen" @click="settingsOpen = true">⚙️</button>
       </div>
     </header>
@@ -139,6 +166,14 @@ h1 {
   font-size: 21px;
   padding: 4px;
   cursor: pointer;
+}
+.fullscreen-btn {
+  color: var(--muted);
+  font-size: 23px;
+  line-height: 1;
+}
+.fullscreen-btn.active {
+  color: var(--accent);
 }
 .board-area {
   position: relative;
