@@ -3,6 +3,7 @@ import { Chess, type Square } from 'chess.js'
 import { engine } from '../engine/engine'
 import { lineToEval, type Analysis } from '../engine/types'
 import { explainBestMove, pieceNameDe, sanToGerman } from '../lib/explain'
+import { judgeMove, type MoveJudgement } from '../lib/judge'
 import { sounds, vibrate } from '../lib/sound'
 import { useSettings } from './settings'
 
@@ -51,6 +52,9 @@ export const useGame = defineStore('game', {
     tipStage: 0,
     tip: null as Tip | null,
 
+    /** Zug-Kommentar zum zuletzt gespielten eigenen Zug (Lernmodus). */
+    feedback: null as MoveJudgement | null,
+
     evalWhite: null as number | null,
     mateWhite: null as number | null,
 
@@ -96,6 +100,7 @@ export const useGame = defineStore('game', {
       }
       this.maybeEngineMove()
       void this.refreshEval()
+      this.maybePrefetch()
     },
 
     persist() {
@@ -182,6 +187,7 @@ export const useGame = defineStore('game', {
       this.blunderPrompt = false
       this.pendingPromotion = null
       this.clearTip()
+      this.feedback = null
       this.tipsLeft = settings.tipBudget
       this.evalWhite = null
       this.mateWhite = null
@@ -191,6 +197,7 @@ export const useGame = defineStore('game', {
       void engine.newGame().catch(() => {})
       this.maybeEngineMove()
       void this.refreshEval()
+      this.maybePrefetch()
     },
 
     resign() {
@@ -269,6 +276,7 @@ export const useGame = defineStore('game', {
     applyUserMove(from: Square, to: Square, promotion?: 'q' | 'r' | 'b' | 'n') {
       const settings = useSettings()
       const prevEvalWhite = this.evalWhite
+      const fenBefore = this.fen
       let move
       try {
         move = chess.move({ from, to, promotion })
@@ -276,40 +284,52 @@ export const useGame = defineStore('game', {
         this.sync()
         return
       }
+      const playedUci = `${move.from}${move.to}${move.promotion ?? ''}`
       this.clearTip()
+      this.feedback = null
       this.sync()
-      this.feedback(move.captured !== undefined)
+      this.moveEffects(move.captured !== undefined)
       if (this.status !== 'playing') {
         this.onGameEnd()
         return
       }
       if (settings.mode === 'pvp') {
         if (settings.autoFlip) this.orientation = this.turnColor
-        void this.checkBlunderThen(prevEvalWhite, move.color, null)
+        void this.afterPlayerMove(prevEvalWhite, move.color, fenBefore, playedUci, null)
       } else {
-        void this.checkBlunderThen(prevEvalWhite, move.color, () => this.engineReply())
+        void this.afterPlayerMove(prevEvalWhite, move.color, fenBefore, playedUci, () =>
+          this.engineReply(),
+        )
       }
     },
 
     /**
-     * Prüft nach einem Zug auf groben Patzer (Eval-Sprung > 2 Bauern).
-     * Bei Patzer erscheint die Warnung; `then` (Engine-Antwort) läuft erst danach.
+     * Läuft nach jedem eigenen Zug: Bewertung aktualisieren, auf groben Patzer
+     * prüfen (Eval-Sprung > 2 Bauern; Warnung blockiert `then` bis zur
+     * Entscheidung) und – falls eingeschaltet – den Zug-Kommentar berechnen.
      */
-    async checkBlunderThen(
+    async afterPlayerMove(
       prevEvalWhite: number | null,
       moverColor: 'w' | 'b',
+      fenBefore: string,
+      playedUci: string,
       then: (() => void) | null,
     ) {
       const settings = useSettings()
       const gen = this.generation
-      if (!settings.blunderWarning && !settings.showEval) {
+      if (!settings.blunderWarning && !settings.showEval && !settings.moveFeedback) {
         then?.()
         return
       }
       try {
-        const analysis = await engine.analyze(this.fen, { depth: 10, multiPv: 1 })
+        // Etwas tiefer analysieren, wenn der Kommentar die Linien mitnutzt.
+        const depth = settings.moveFeedback ? 12 : 10
+        const analysis = await engine.analyze(this.fen, { depth, multiPv: 1 })
         if (gen !== this.generation || this.status !== 'playing') return
         this.applyEval(analysis)
+        if (settings.moveFeedback) {
+          void this.computeFeedback(fenBefore, playedUci, analysis.lines, gen)
+        }
         const line = analysis.lines[0]
         if (settings.blunderWarning && line && prevEvalWhite !== null) {
           const now = lineToEval(line, chess.turn()).cpWhite
@@ -318,7 +338,7 @@ export const useGame = defineStore('game', {
           if (drop >= BLUNDER_THRESHOLD) {
             sounds.warn()
             this.blunderPrompt = true
-            pendingAfterBlunder = then
+            pendingAfterBlunder = then // Weitergabe übernimmt resolveBlunder()
             return
           }
         }
@@ -326,6 +346,42 @@ export const useGame = defineStore('game', {
         /* Eval optional – Partie geht weiter */
       }
       then?.()
+      if (settings.mode === 'pvp') this.maybePrefetch()
+    },
+
+    /** Analyse mit Tipp-Tiefe, gecacht pro Stellung (Tipps, Zug-Kommentare, Prefetch). */
+    async ensureAnalysis(fen: string): Promise<Analysis> {
+      const cached = analysisCache.get(fen)
+      if (cached) return cached
+      const analysis = await engine.analyze(fen, { depth: 13, multiPv: 3 })
+      analysisCache.set(fen, analysis)
+      return analysis
+    },
+
+    /**
+     * Analysiert die aktuelle Stellung im Hintergrund vor, solange der Spieler
+     * nachdenkt – der Zug-Kommentar (und der erste Tipp) kommt dann sofort.
+     */
+    maybePrefetch() {
+      const settings = useSettings()
+      if (!settings.moveFeedback || this.status !== 'playing') return
+      if (settings.mode === 'ai' && this.turnColor !== settings.playerColor) return
+      void this.ensureAnalysis(this.fen).catch(() => {})
+    },
+
+    async computeFeedback(
+      fenBefore: string,
+      playedUci: string,
+      linesAfter: Analysis['lines'],
+      gen: number,
+    ) {
+      try {
+        const before = await this.ensureAnalysis(fenBefore)
+        if (gen !== this.generation) return
+        this.feedback = judgeMove(fenBefore, playedUci, before.lines, linesAfter)
+      } catch {
+        /* Kommentar optional */
+      }
     },
 
     /** Antwort auf die Fehlerwarnung. */
@@ -337,6 +393,7 @@ export const useGame = defineStore('game', {
         this.undo()
       } else {
         then?.()
+        this.maybePrefetch()
       }
     },
 
@@ -355,9 +412,12 @@ export const useGame = defineStore('game', {
             promotion: (uci[4] as 'q' | 'r' | 'b' | 'n' | undefined) ?? undefined,
           })
           this.sync()
-          this.feedback(move.captured !== undefined)
+          this.moveEffects(move.captured !== undefined)
           if (this.status !== 'playing') this.onGameEnd()
-          else void this.refreshEval()
+          else {
+            void this.refreshEval()
+            this.maybePrefetch()
+          }
         }
         this.engineError = null
       } catch (e) {
@@ -392,6 +452,7 @@ export const useGame = defineStore('game', {
       pendingAfterBlunder = null
       this.pendingPromotion = null
       this.clearTip()
+      this.feedback = null
 
       if (settings.mode === 'ai') {
         // Engine-Antwort mit zurücknehmen, damit der Mensch wieder am Zug ist.
@@ -411,6 +472,7 @@ export const useGame = defineStore('game', {
       // seines allerersten Zugs), muss er erneut angestoßen werden.
       this.maybeEngineMove()
       void this.refreshEval()
+      this.maybePrefetch()
     },
 
     // ---------- Bewertung & Tipps ----------
@@ -453,11 +515,7 @@ export const useGame = defineStore('game', {
       const fen = this.fen
       this.analyzing = true
       try {
-        let analysis = analysisCache.get(fen)
-        if (!analysis) {
-          analysis = await engine.analyze(fen, { depth: 13, multiPv: 3 })
-          analysisCache.set(fen, analysis)
-        }
+        const analysis = await this.ensureAnalysis(fen)
         if (gen !== this.generation || fen !== this.fen) return
         const line = analysis.lines[0]
         if (!line) return
@@ -497,7 +555,7 @@ export const useGame = defineStore('game', {
 
     // ---------- Feedback ----------
 
-    feedback(captured: boolean) {
+    moveEffects(captured: boolean) {
       const settings = useSettings()
       const ended = this.status !== 'playing'
       if (settings.sound) {

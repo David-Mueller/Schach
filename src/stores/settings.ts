@@ -14,6 +14,8 @@ export interface SettingsState {
   autoFlip: boolean
   showEval: boolean
   blunderWarning: boolean
+  /** Zug-Kommentare: bewertet nach jedem eigenen Zug, wie gut er war. */
+  moveFeedback: boolean
   sound: boolean
   haptics: boolean
 }
@@ -28,6 +30,7 @@ const defaults: SettingsState = {
   autoFlip: false,
   showEval: false,
   blunderWarning: true,
+  moveFeedback: false,
   sound: true,
   haptics: true,
 }

@@ -34,6 +34,22 @@ nächsten Zug zeigen und auf Deutsch erklären, warum er gut ist.
 Nutzung unproblematisch; bei einer Veröffentlichung als Produkt muss der Code
 GPL-kompatibel offengelegt oder das Board/die Engine ersetzt werden.
 
+## Offline nutzen (wichtig)
+
+Die App braucht **kein** Netz zum Spielen — Engine, Tipps und Erklärungen laufen
+komplett lokal. Damit das funktioniert, muss der Browser die App aber einmal
+vollständig cachen dürfen:
+
+1. Die App **über den HTTPS-Link** öffnen (z. B. `https://….ts.net`).
+   Über `http://` (z. B. eine nackte Tailscale-IP) registriert der Browser
+   **keinen** Service Worker — dann ist nichts offline verfügbar!
+2. Kurz warten, bis unten die Meldung **„✓ Bereit für Offline-Spiel“**
+   erscheint (beim ersten Besuch, lädt ~7 MB inkl. Engine).
+3. Optional über das Browser-Menü **„Zum Startbildschirm hinzufügen“**.
+
+Ab dann funktioniert alles ohne Internet/Tailnet — auch Computergegner,
+Tipps und Zug-Kommentare.
+
 ## Entwicklung
 
 ```bash

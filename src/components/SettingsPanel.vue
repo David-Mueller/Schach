@@ -77,6 +77,10 @@ function startNewGame() {
           <input v-model="settings.blunderWarning" type="checkbox" />
         </label>
         <label class="row toggle">
+          <span>Zug-Kommentare nach jedem Zug</span>
+          <input v-model="settings.moveFeedback" type="checkbox" />
+        </label>
+        <label class="row toggle">
           <span>Bewertungsbalken anzeigen</span>
           <input v-model="settings.showEval" type="checkbox" />
         </label>

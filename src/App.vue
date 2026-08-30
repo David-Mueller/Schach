@@ -27,12 +27,21 @@ function toggleFullscreen() {
   }
 }
 
+// Einmalige Meldung, sobald der Service Worker alles für Offline gecacht hat.
+const offlineReady = ref(false)
+
 onMounted(() => {
   void game.initApp()
   document.addEventListener('fullscreenchange', () => {
     isFullscreen.value = document.fullscreenElement !== null
   })
+  window.addEventListener('schach:offline-ready', () => {
+    offlineReady.value = true
+    setTimeout(() => (offlineReady.value = false), 8000)
+  })
 })
+
+const verdictClass = computed(() => (game.feedback ? `verdict-${game.feedback.verdict}` : ''))
 
 const tipCountLabel = computed(() => (game.tipsUnlimited ? '∞' : String(game.tipsLeft)))
 
@@ -101,6 +110,13 @@ function confirmNewGame() {
       </div>
     </div>
 
+    <div v-if="game.feedback" class="feedback-box" :class="verdictClass">
+      <p>
+        <strong>{{ game.feedback.title }}</strong>
+        {{ game.feedback.text }}
+      </p>
+    </div>
+
     <div v-if="game.tip" class="tip-box">
       <p>{{ game.tip.text }}</p>
     </div>
@@ -122,6 +138,12 @@ function confirmNewGame() {
     </div>
 
     <MoveList />
+
+    <transition name="toast">
+      <div v-if="offlineReady" class="offline-toast">
+        ✓ Bereit für Offline-Spiel – die App funktioniert jetzt auch ohne Internet.
+      </div>
+    </transition>
 
     <PromotionDialog />
     <SettingsPanel :open="settingsOpen" @close="settingsOpen = false" />
@@ -212,6 +234,75 @@ h1 {
   margin: 0;
   font-size: 14px;
   line-height: 1.45;
+}
+.feedback-box {
+  background: var(--panel);
+  border-radius: 10px;
+  border-left: 5px solid var(--muted);
+  padding: 10px 12px;
+}
+.feedback-box p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.feedback-box strong {
+  margin-right: 4px;
+}
+.verdict-best,
+.verdict-good {
+  border-left-color: #7fb069;
+}
+.verdict-best strong,
+.verdict-good strong {
+  color: #9dcc86;
+}
+.verdict-okay {
+  border-left-color: #c9c26a;
+}
+.verdict-okay strong {
+  color: #d8d28a;
+}
+.verdict-inaccuracy {
+  border-left-color: #e0b34d;
+}
+.verdict-inaccuracy strong {
+  color: #eac878;
+}
+.verdict-mistake {
+  border-left-color: #e08a4d;
+}
+.verdict-mistake strong {
+  color: #eaa878;
+}
+.verdict-blunder {
+  border-left-color: #e05d5d;
+}
+.verdict-blunder strong {
+  color: #ee8888;
+}
+.offline-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  background: var(--accent-dim);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  max-width: 92vw;
+  z-index: 60;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
+}
+.toast-enter-active,
+.toast-leave-active {
+  transition: opacity 0.4s, transform 0.4s;
+}
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(12px);
 }
 .controls {
   display: flex;

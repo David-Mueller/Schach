@@ -51,17 +51,19 @@ export function sanToGerman(san: string): string {
   return san.replace(/N/g, 'S').replace(/B/g, 'L').replace(/R/g, 'T').replace(/Q/g, 'D')
 }
 
-const GENERIC = 'Dieser Zug verbessert deine Stellung.'
+/** Generischer Fallback-Satz von explainBestMove (exportiert zur Filterung in judge.ts). */
+export const GENERIC_EXPLANATION = 'Dieser Zug verbessert deine Stellung.'
+const GENERIC = GENERIC_EXPLANATION
 const CENTER_SQUARES: Square[] = ['d4', 'e4', 'd5', 'e5']
 
-interface MoveInput {
+export interface MoveInput {
   from: string
   to: string
   promotion?: string
 }
 
 /** UCI ("e2e4", "e7e8q") → Eingabe für chess.move(). */
-function uciToMoveInput(uci: string): MoveInput {
+export function uciToMoveInput(uci: string): MoveInput {
   const input: MoveInput = { from: uci.slice(0, 2), to: uci.slice(2, 4) }
   const promotion = uci[4]
   if (promotion !== undefined) input.promotion = promotion
@@ -101,20 +103,29 @@ function isHanging(chess: Chess, square: Square): boolean {
   return minAttackerValue(chess, square, enemy) < valueOf(piece.type)
 }
 
+/** Ergebnis einer pv-Materialsimulation aus Sicht des Ziehenden. */
+export interface PvMaterial {
+  /** Netto-Materialbilanz in Bauerneinheiten (positiv: Ziehender gewinnt Material). */
+  gain: number
+  /** Wertvollster Figurentyp ('p'|'n'|'b'|'r'|'q'), den der Ziehende schlägt, falls vorhanden. */
+  biggestCapture?: string
+}
+
 /**
- * Materialbilanz aus Sicht des Ziehenden nach Simulation der pv
- * (max. `maxPlies` Halbzüge; bricht bei illegalem pv-Zug sauber ab).
- * Gezählt werden geschlagene Figuren (Bauer 1, Springer/Läufer 3, Turm 5, Dame 9).
+ * Simuliert die pv auf `fen` (max. `maxPlies` Halbzüge; bricht bei illegalem
+ * pv-Zug sauber ab) und zählt geschlagene Figuren
+ * (Bauer 1, Springer/Läufer 3, Turm 5, Dame 9) aus Sicht des Ziehenden.
  */
-function materialGainFromPv(fen: string, pv: string[], maxPlies = 6): number {
+export function simulatePvMaterial(fen: string, pv: string[], maxPlies = 6): PvMaterial {
   let chess: Chess
   try {
     chess = new Chess(fen)
   } catch {
-    return 0
+    return { gain: 0 }
   }
   const mover = chess.turn()
   let gain = 0
+  let biggest: string | undefined
   for (const uci of pv.slice(0, maxPlies)) {
     const side = chess.turn()
     let mv: Move
@@ -124,10 +135,37 @@ function materialGainFromPv(fen: string, pv: string[], maxPlies = 6): number {
       break
     }
     if (mv.captured) {
-      gain += (side === mover ? 1 : -1) * valueOf(mv.captured)
+      if (side === mover) {
+        gain += valueOf(mv.captured)
+        if (biggest === undefined || valueOf(mv.captured) > valueOf(biggest)) {
+          biggest = mv.captured
+        }
+      } else {
+        gain -= valueOf(mv.captured)
+      }
     }
   }
-  return gain
+  const result: PvMaterial = { gain }
+  if (biggest !== undefined) result.biggestCapture = biggest
+  return result
+}
+
+/**
+ * Materialbilanz aus Sicht des Ziehenden nach Simulation der pv
+ * (max. `maxPlies` Halbzüge; bricht bei illegalem pv-Zug sauber ab).
+ * Gezählt werden geschlagene Figuren (Bauer 1, Springer/Läufer 3, Turm 5, Dame 9).
+ */
+function materialGainFromPv(fen: string, pv: string[], maxPlies = 6): number {
+  return simulatePvMaterial(fen, pv, maxPlies).gain
+}
+
+/** Akkusativ mit Possessiv "dein…", z. B. "deinen Turm", "deine Dame", "deinen Bauern". */
+export function pieceDeinAcc(type: string): string {
+  const p = pieceDe(type)
+  if (!p) return 'deine Figur'
+  const poss = p.article === 'die' ? 'deine' : 'deinen'
+  const noun = type.toLowerCase() === 'p' ? 'Bauern' : p.name
+  return `${poss} ${noun}`
 }
 
 /** Kindgerechte Benennung eines Materialgewinns. */
