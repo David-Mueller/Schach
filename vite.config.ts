@@ -3,6 +3,9 @@ import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
+  // Für GitHub Pages (Hosting unter /Schach/) setzt der Workflow BASE_PATH;
+  // lokal und auf Coolify bleibt es die Site-Root.
+  base: process.env.BASE_PATH ?? '/',
   plugins: [
     vue(),
     VitePWA({
