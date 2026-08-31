@@ -13,6 +13,14 @@ export interface LevelConfig {
 }
 
 export const LEVELS: Record<number, LevelConfig> = {
+  0: {
+    label: 'Stufe 0 – Ganz leicht',
+    approxElo: 400,
+    // Sonderfall in bestMoveForLevel: zieht meist zufällig (siehe unten).
+    options: { 'Skill Level': 0, UCI_LimitStrength: false },
+    go: 'go depth 1',
+    minDelayMs: 700,
+  },
   1: {
     label: 'Stufe 1 – Anfänger',
     approxElo: 800,
@@ -186,10 +194,44 @@ export class Engine {
     return { fen, depth: result.depth, lines: result.lines }
   }
 
+  /**
+   * Stufe 0: Die Engine listet per MultiPV alle legalen Züge bei Tiefe 1 auf;
+   * zu 75 % fällt die Wahl auf einen Zufallszug, zu 25 % auf den besten davon –
+   * so reagiert sie manchmal (schlägt z. B. eine hängende Figur), bleibt aber
+   * für absolute Anfänger gut schlagbar.
+   */
+  private async randomishMove(fen: string): Promise<string> {
+    const result = await this.enqueue(
+      [
+        'setoption name UCI_LimitStrength value false',
+        'setoption name Skill Level value 0',
+        'setoption name MultiPV value 250',
+        `position fen ${fen}`,
+        'go depth 1',
+      ],
+      true,
+    )
+    const lines = result.lines
+    const first = lines[0]
+    if (!first) return result.bestmove
+    if (Math.random() < 0.25) return first.move
+    const pick = lines[Math.floor(Math.random() * lines.length)]
+    return pick?.move ?? first.move
+  }
+
   /** Zug des Computergegners in der eingestellten Spielstärke. */
   async bestMoveForLevel(fen: string, level: number): Promise<string> {
     await this.init()
     const cfg = LEVELS[level] ?? LEVELS[3]!
+    if (level === 0) {
+      const started = performance.now()
+      const move = await this.randomishMove(fen)
+      const elapsed = performance.now() - started
+      if (elapsed < cfg.minDelayMs) {
+        await new Promise((r) => setTimeout(r, cfg.minDelayMs - elapsed))
+      }
+      return move
+    }
     const optionCmds = Object.entries(cfg.options).map(
       ([name, value]) => `setoption name ${name} value ${value}`,
     )
