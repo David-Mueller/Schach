@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Chessground } from 'chessground'
 import type { Api } from 'chessground/api'
 import type { Config } from 'chessground/config'
@@ -14,6 +14,47 @@ const settings = useSettings()
 const el = ref<HTMLElement | null>(null)
 let api: Api | null = null
 let resizeObserver: ResizeObserver | null = null
+
+/**
+ * Hotseat ohne Brettdrehung: Sitzt der Spieler am Zug "auf der anderen Seite"
+ * des Geräts (Zugfarbe ≠ Brettausrichtung), drehen sich die 3D-Figuren zu ihm.
+ */
+const flipped3d = computed(
+  () =>
+    settings.boardStyle === '3d' &&
+    settings.mode === 'pvp' &&
+    !settings.autoFlip &&
+    game.turnColor !== game.orientation,
+)
+
+/**
+ * Z-Staffelung passend zur Blickrichtung: Normal überlappen vordere Reihen
+ * (unten am Bildschirm) die hinteren; für den gegenüber sitzenden Spieler
+ * ist es umgekehrt. Idempotent aus der Figurenposition berechnet, weil
+ * chessground die z-Indizes bei jedem Render neu vergibt.
+ */
+function applyPieceZ() {
+  if (!el.value || settings.boardStyle !== '3d') return
+  const boardEl = el.value.querySelector('cg-board')
+  if (!boardEl) return
+  const sq = boardEl.getBoundingClientRect().height / 8
+  if (sq <= 0) return
+  const flip = flipped3d.value
+  boardEl.querySelectorAll<HTMLElement>('piece:not(.dragging)').forEach((p) => {
+    const m = /translate\(-?[\d.]+px(?:, ?(-?[\d.]+)px)?\)/.exec(p.style.transform)
+    if (!m) return
+    const row = Math.min(7, Math.max(0, Math.round(parseFloat(m[1] ?? '0') / sq)))
+    p.style.zIndex = String(flip ? 10 - row : 3 + row)
+  })
+}
+
+let zTimer: ReturnType<typeof setTimeout> | null = null
+function schedulePieceZ() {
+  applyPieceZ()
+  if (zTimer) clearTimeout(zTimer)
+  // Zweiter Durchlauf nach der Zug-Animation (200 ms), wenn die Figuren stehen.
+  zTimer = setTimeout(applyPieceZ, 260)
+}
 
 function movableColor(): 'white' | 'black' | undefined {
   if (game.status !== 'playing' || game.blunderPrompt || game.pendingPromotion || game.pattPrompt)
@@ -75,9 +116,11 @@ onMounted(() => {
   el.value.addEventListener('mousedown', clearBoundsCache, { capture: true })
   resizeObserver = new ResizeObserver(() => api?.redrawAll())
   resizeObserver.observe(el.value)
+  schedulePieceZ()
 })
 
 onBeforeUnmount(() => {
+  if (zTimer) clearTimeout(zTimer)
   el.value?.removeEventListener('touchstart', clearBoundsCache, { capture: true })
   el.value?.removeEventListener('mousedown', clearBoundsCache, { capture: true })
   resizeObserver?.disconnect()
@@ -102,8 +145,13 @@ watch(
     settings.mode,
     settings.playerColor,
     settings.boardStyle,
+    settings.autoFlip,
+    flipped3d.value,
   ],
-  () => api?.set(buildConfig()),
+  () => {
+    api?.set(buildConfig())
+    schedulePieceZ()
+  },
   { flush: 'post' },
 )
 </script>
@@ -115,7 +163,10 @@ watch(
     an sein Host-Element, und Vues class-Patching würde sie beim Umschalten
     überschreiben (Folge: unsichtbare Figuren).
   -->
-  <div class="board-frame" :class="{ 'board--3d': settings.boardStyle === '3d' }">
+  <div
+    class="board-frame"
+    :class="{ 'board--3d': settings.boardStyle === '3d', 'board--3d-flip': flipped3d }"
+  >
     <div ref="el" class="board" />
   </div>
 </template>
