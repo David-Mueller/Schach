@@ -56,10 +56,8 @@ button {
   color: var(--muted);
 }
 
-/* Chessground: responsive Größe über den Container */
-.board .cg-wrap {
-  width: 100%;
-  height: 100%;
+/* Chessground macht .board selbst zum .cg-wrap */
+.board.cg-wrap {
   border-radius: 4px;
   overflow: hidden;
 }
@@ -67,12 +65,12 @@ button {
 /*
  * 3D-Ansicht: Brett bleibt gerade von oben, nur die Figuren sind plastische,
  * vorgerenderte Sprites, die nach oben über ihr Feld hinausragen.
- * Höhe 19.5% = 1.56 Felder; margin-top zieht die Box um die Differenz hoch,
- * damit der Figurenfuß auf dem Feld steht (Margin-% beziehen sich auf die
- * Containerbreite, das Brett ist quadratisch – passt also auch vertikal).
+ * margin-top zieht die Box um die Differenz hoch, damit der Figurenfuß auf
+ * dem Feld steht (Margin-% beziehen sich auf die Containerbreite, das Brett
+ * ist quadratisch – passt also auch vertikal).
  */
 /* Figuren dürfen oben über den Brettrand hinausragen (8. Reihe) */
-.board--3d .cg-wrap {
+.board--3d .board.cg-wrap {
   overflow: visible;
 }
 .board--3d {
@@ -80,7 +78,10 @@ button {
 }
 .board--3d piece {
   height: 25%;
-  margin-top: -12.5%;
+  /* -12.5% wäre bündig mit der Feldunterkante; die Sprites haben unten
+     ~16% Leerraum, daher tiefer setzen: der Figurenfuß steht dadurch im
+     unteren Felddrittel und nutzt das Feld besser aus. */
+  margin-top: -9.5%;
   background-size: contain;
   background-position: center bottom;
   background-repeat: no-repeat;

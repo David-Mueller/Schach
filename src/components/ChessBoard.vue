@@ -16,7 +16,8 @@ let api: Api | null = null
 let resizeObserver: ResizeObserver | null = null
 
 function movableColor(): 'white' | 'black' | undefined {
-  if (game.status !== 'playing' || game.blunderPrompt || game.pendingPromotion) return undefined
+  if (game.status !== 'playing' || game.blunderPrompt || game.pendingPromotion || game.pattPrompt)
+    return undefined
   if (settings.mode === 'pvp') return game.turnColor
   return game.thinking ? undefined : settings.playerColor
 }
@@ -97,6 +98,7 @@ watch(
     game.status,
     game.blunderPrompt,
     game.pendingPromotion,
+    game.pattPrompt,
     settings.mode,
     settings.playerColor,
     settings.boardStyle,
@@ -107,7 +109,15 @@ watch(
 </script>
 
 <template>
-  <div ref="el" class="board" :class="{ 'board--3d': settings.boardStyle === '3d' }" />
+  <!--
+    WICHTIG: Das dynamische :class liegt auf dem Wrapper, NICHT auf dem
+    Chessground-Element selbst – chessground hängt eigene Klassen (cg-wrap …)
+    an sein Host-Element, und Vues class-Patching würde sie beim Umschalten
+    überschreiben (Folge: unsichtbare Figuren).
+  -->
+  <div class="board-frame" :class="{ 'board--3d': settings.boardStyle === '3d' }">
+    <div ref="el" class="board" />
+  </div>
 </template>
 
 <style scoped>

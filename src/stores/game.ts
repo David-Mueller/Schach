@@ -60,6 +60,8 @@ export const useGame = defineStore('game', {
 
     blunderPrompt: false,
     pendingPromotion: null as { from: Square; to: Square } | null,
+    /** Warnung: Der gewählte Zug würde sofort Patt setzen, obwohl man klar führt. */
+    pattPrompt: null as { from: Square; to: Square; promotion?: 'q' | 'r' | 'b' | 'n' } | null,
 
     orientation: 'white' as 'white' | 'black',
     /** Steigt bei Undo/Neustart, damit veraltete Engine-Antworten verworfen werden. */
@@ -186,6 +188,7 @@ export const useGame = defineStore('game', {
       this.analyzing = false
       this.blunderPrompt = false
       this.pendingPromotion = null
+      this.pattPrompt = null
       this.clearTip()
       this.feedback = null
       this.tipsLeft = settings.tipBudget
@@ -248,7 +251,7 @@ export const useGame = defineStore('game', {
 
     /** Vom Brett gemeldeter Zug des Menschen. */
     userMove(from: Square, to: Square) {
-      if (this.status !== 'playing' || !this.isPlayersTurn || this.blunderPrompt) {
+      if (this.status !== 'playing' || !this.isPlayersTurn || this.blunderPrompt || this.pattPrompt) {
         this.sync() // Brett zurücksetzen
         return
       }
@@ -275,6 +278,28 @@ export const useGame = defineStore('game', {
 
     applyUserMove(from: Square, to: Square, promotion?: 'q' | 'r' | 'b' | 'n') {
       const settings = useSettings()
+
+      // Patt-Schutz: Würde der Zug den Gegner sofort patt setzen, obwohl man
+      // klar auf Gewinn steht, erst nachfragen (klassische Anfänger-Falle:
+      // Dame erstickt den nackten König – Partie plötzlich unentschieden).
+      if (settings.blunderWarning && !pattApproved) {
+        try {
+          const probe = new Chess(this.fen)
+          probe.move({ from, to, promotion })
+          if (probe.isStalemate()) {
+            const sign = this.turnColor === 'white' ? 1 : -1
+            const advantage = (this.evalWhite ?? this.materialBalance * 100) * sign
+            if (advantage > 300) {
+              this.pattPrompt = { from, to, promotion }
+              this.sync() // Brett zurücksetzen, Zug noch nicht ausführen
+              return
+            }
+          }
+        } catch {
+          /* illegaler Zug: der normale Pfad unten meldet das */
+        }
+      }
+
       const prevEvalWhite = this.evalWhite
       const fenBefore = this.fen
       let move
@@ -384,6 +409,20 @@ export const useGame = defineStore('game', {
       }
     },
 
+    /** Antwort auf die Patt-Warnung. */
+    resolvePatt(playAnyway: boolean) {
+      const p = this.pattPrompt
+      this.pattPrompt = null
+      if (playAnyway && p) {
+        pattApproved = true
+        try {
+          this.applyUserMove(p.from, p.to, p.promotion)
+        } finally {
+          pattApproved = false
+        }
+      }
+    },
+
     /** Antwort auf die Fehlerwarnung. */
     resolveBlunder(takeBack: boolean) {
       this.blunderPrompt = false
@@ -451,6 +490,7 @@ export const useGame = defineStore('game', {
       this.blunderPrompt = false
       pendingAfterBlunder = null
       this.pendingPromotion = null
+      this.pattPrompt = null
       this.clearTip()
       this.feedback = null
 
@@ -583,6 +623,8 @@ export const useGame = defineStore('game', {
 // Nicht-reaktive Modulzustände
 const analysisCache = new Map<string, Analysis>()
 let pendingAfterBlunder: (() => void) | null = null
+/** true, während ein per Patt-Warnung bestätigter Zug ausgeführt wird. */
+let pattApproved = false
 
 function uciToSan(fen: string, uci: string): string {
   try {

@@ -109,6 +109,18 @@ function confirmNewGame() {
 
     <p v-if="statusLine" class="status" :class="{ error: game.engineError }">{{ statusLine }}</p>
 
+    <div v-if="game.pattPrompt" class="blunder">
+      <p>
+        ⚠️ Achtung, Patt-Gefahr! Nach diesem Zug hätte dein Gegner keinen legalen Zug mehr –
+        die Partie endet dann sofort <strong>unentschieden</strong>, obwohl du klar vorne bist.
+        Lass ihm lieber einen Zug übrig und setz ihn dann matt!
+      </p>
+      <div class="blunder-buttons">
+        <button class="btn primary" @click="game.resolvePatt(false)">Anders ziehen</button>
+        <button class="btn" @click="game.resolvePatt(true)">Trotzdem ziehen</button>
+      </div>
+    </div>
+
     <div v-if="game.blunderPrompt" class="blunder">
       <p>⚠️ Das war riskant! Möchtest du den Zug zurücknehmen?</p>
       <div class="blunder-buttons">
