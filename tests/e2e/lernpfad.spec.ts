@@ -1,0 +1,93 @@
+import { expect, test } from '@playwright/test'
+import { collectErrors, prepare, tapMove, waitForStatus } from './helpers'
+
+test.describe('Lernpfad (Fahrschule)', () => {
+  test('Lektion mitspielen: Coach-Hinweise, Sterne, Ab-hier-weiterspielen', async ({ page }) => {
+    const errors = collectErrors(page)
+    await prepare(page)
+
+    // Lernpfad: Stufe 1 offen, Stufe 2 gesperrt
+    await page.click('[aria-label="Lernpfad"]')
+    await page.waitForSelector('.stage')
+    await expect(page.locator('.stage').first()).not.toHaveClass(/locked/)
+    await expect(page.locator('.stage').nth(1)).toHaveClass(/locked/)
+
+    // Erste Lektion (Zentrum & Entwicklung) im Übungsmodus starten
+    await page.locator('.lesson-row .btn.primary').first().click()
+    await expect(page.locator('.lesson-box')).toContainText('goldene Regel', { timeout: 10_000 })
+
+    // Falscher Zug → Text-Hinweis; nochmal falsch → Pfeil
+    await tapMove(page, [0, 2], [0, 4]) // a4 statt e4
+    await expect(page.locator('.lesson-box')).toContainText('Fast!')
+    await tapMove(page, [0, 2], [0, 3])
+    await expect(page.locator('.lesson-box')).toContainText('Pfeil')
+    expect(await page.evaluate(() => !!document.querySelector('.board .cg-shapes g *'))).toBe(true)
+
+    // Lektion durchspielen (weiße Züge); Gegnerzüge laufen automatisch
+    const whiteMoves: [number, number][][] = [
+      [[4, 2], [4, 4]], // e4
+      [[6, 1], [5, 3]], // Sf3
+      [[5, 1], [2, 4]], // Lc4
+      [[1, 1], [2, 3]], // Sc3
+      [[3, 2], [3, 3]], // d3
+      [[4, 1], [6, 1]], // O-O
+    ]
+    for (const [from, to] of whiteMoves) {
+      await page.waitForFunction(
+        () => document.querySelector('.status')?.textContent?.includes('Du bist dran') ?? false,
+        null,
+        { timeout: 15_000 },
+      )
+      await tapMove(page, from, to)
+    }
+
+    // Abschluss: 2 Fehlversuche → 2 Sterne
+    await expect(page.locator('.lesson-finish')).toBeVisible({ timeout: 15_000 })
+    await expect(page.locator('.finish-stars')).toHaveText(/★★☆/)
+
+    // Ab hier weiterspielen: Engine übernimmt die Gegnerseite
+    await page.getByRole('button', { name: 'Ab hier weiterspielen' }).click()
+    await waitForStatus(page, 'Du bist am Zug', 15_000)
+    await tapMove(page, [3, 3], [3, 4]) // d4
+    await page.waitForFunction(
+      () => document.querySelectorAll('.movelist .mv').length >= 14,
+      null,
+      { timeout: 30_000 },
+    )
+
+    // Fortschritt gespeichert
+    await page.click('[aria-label="Lernpfad"]')
+    await expect(page.locator('.lesson-row .stars').first()).toHaveText(/★★☆/)
+
+    expect(errors).toEqual([])
+  })
+
+  test('Lektion beenden stellt den vorherigen Spielstand wieder her', async ({ page }) => {
+    const errors = collectErrors(page)
+    await prepare(page)
+    await waitForStatus(page, 'Du bist am Zug')
+
+    // Normale Partie beginnen (2 Halbzüge), dann Lektion starten und abbrechen
+    await tapMove(page, [4, 2], [4, 4])
+    await page.waitForFunction(
+      () => document.querySelectorAll('.movelist .mv').length >= 2,
+      null,
+      { timeout: 30_000 },
+    )
+    await page.click('[aria-label="Lernpfad"]')
+    await page.locator('.lesson-row .btn.primary').first().click()
+    await expect(page.locator('.lesson-box')).toBeVisible({ timeout: 10_000 })
+    // Zugliste ist während der Lektion leer (frisches Lektionsbrett)
+    await expect(page.locator('.movelist')).toHaveCount(0)
+
+    await page.getByRole('button', { name: 'Lektion beenden' }).click()
+    // Der alte Spielstand (2 Halbzüge) ist zurück
+    await page.waitForFunction(
+      () => document.querySelectorAll('.movelist .mv').length === 2,
+      null,
+      { timeout: 10_000 },
+    )
+
+    expect(errors).toEqual([])
+  })
+})

@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
 
@@ -39,5 +39,9 @@ export default defineConfig({
   ],
   build: {
     target: 'es2022',
+  },
+  test: {
+    // Nur Unit-Tests; die Playwright-Specs unter tests/e2e laufen via pnpm test:e2e.
+    include: ['src/**/*.test.ts'],
   },
 })

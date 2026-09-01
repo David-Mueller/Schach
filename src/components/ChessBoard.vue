@@ -22,7 +22,7 @@ let resizeObserver: ResizeObserver | null = null
 const flipped3d = computed(
   () =>
     settings.boardStyle === '3d' &&
-    settings.mode === 'pvp' &&
+    game.effectiveMode === 'pvp' &&
     !settings.autoFlip &&
     game.turnColor !== game.orientation,
 )
@@ -59,8 +59,12 @@ function schedulePieceZ() {
 function movableColor(): 'white' | 'black' | undefined {
   if (game.status !== 'playing' || game.blunderPrompt || game.pendingPromotion || game.pattPrompt)
     return undefined
-  if (settings.mode === 'pvp') return game.turnColor
-  return game.thinking ? undefined : settings.playerColor
+  if (game.effectiveMode === 'lesson') {
+    const L = game.lesson
+    return L && L.mode === 'play' && !L.finished ? L.playerColor : undefined
+  }
+  if (game.effectiveMode === 'pvp') return game.turnColor
+  return game.thinking ? undefined : game.effectivePlayerColor
 }
 
 function tipShapes(): DrawShape[] {
@@ -142,6 +146,9 @@ watch(
     game.blunderPrompt,
     game.pendingPromotion,
     game.pattPrompt,
+    game.lesson,
+    game.lesson?.finished,
+    game.postLessonAi,
     settings.mode,
     settings.playerColor,
     settings.boardStyle,

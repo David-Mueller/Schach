@@ -7,12 +7,14 @@ import MoveList from './components/MoveList.vue'
 import PromotionDialog from './components/PromotionDialog.vue'
 import GameOverOverlay from './components/GameOverOverlay.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
+import LessonPath from './components/LessonPath.vue'
 import { useGame } from './stores/game'
 import { useSettings } from './stores/settings'
 
 const game = useGame()
 const settings = useSettings()
 const settingsOpen = ref(false)
+const lessonPathOpen = ref(false)
 
 // Vollbild: blendet auf Android auch die Statusleiste aus.
 // (Auf dem iPhone unterstützt Safari die Fullscreen-API nicht – Button entfällt dort.)
@@ -57,10 +59,16 @@ const tipDisabled = computed(
 
 const statusLine = computed(() => {
   if (game.engineError) return game.engineError
+  if (game.lesson) {
+    if (game.lesson.finished) return null
+    if (game.lesson.mode === 'demo') return '🎬 Schau zu und lies die Erklärungen!'
+    return game.isPlayersTurn ? 'Du bist dran – spiel den Lektionszug!' : 'Der Gegner zieht …'
+  }
   if (game.status !== 'playing') return null
   if (game.thinking) return 'Computer denkt …'
   if (game.inCheck) return 'Schach!'
-  if (settings.mode === 'pvp') return game.turnColor === 'white' ? 'Weiß ist am Zug' : 'Schwarz ist am Zug'
+  if (game.effectiveMode === 'pvp')
+    return game.turnColor === 'white' ? 'Weiß ist am Zug' : 'Schwarz ist am Zug'
   return game.isPlayersTurn ? 'Du bist am Zug' : null
 })
 
@@ -77,7 +85,8 @@ function confirmNewGame() {
     <header class="topbar">
       <h1>♞ SchachTrainer</h1>
       <div class="topbar-right">
-        <span class="tips-badge" title="Tipps übrig">💡 {{ tipCountLabel }}</span>
+        <span v-if="!game.lesson" class="tips-badge" title="Tipps übrig">💡 {{ tipCountLabel }}</span>
+        <button class="icon-btn" aria-label="Lernpfad" @click="lessonPathOpen = true">🎓</button>
         <button
           class="style-toggle"
           :aria-label="settings.boardStyle === '3d' ? 'Zur 2D-Ansicht wechseln' : 'Zur 3D-Ansicht wechseln'"
@@ -98,7 +107,7 @@ function confirmNewGame() {
       </div>
     </header>
 
-    <EvalBar v-if="settings.showEval" />
+    <EvalBar v-if="settings.showEval && !game.lesson" />
 
     <main class="board-area">
       <ChessBoard />
@@ -136,11 +145,44 @@ function confirmNewGame() {
       </p>
     </div>
 
-    <div v-if="game.tip" class="tip-box">
+    <div v-if="game.tip && game.tip.text" class="tip-box">
       <p>{{ game.tip.text }}</p>
     </div>
 
-    <div class="controls">
+    <div v-if="game.lessonComment" class="lesson-box">
+      <p>🎓 {{ game.lessonComment }}</p>
+    </div>
+
+    <div v-if="game.lesson?.finished" class="lesson-finish">
+      <p class="finish-title">
+        Lektion geschafft!
+        <span v-if="game.lesson.earnedStars !== null" class="finish-stars">
+          {{ '★'.repeat(game.lesson.earnedStars) }}{{ '☆'.repeat(3 - game.lesson.earnedStars) }}
+        </span>
+      </p>
+      <p class="finish-outro">{{ game.lesson.outro }}</p>
+      <div class="finish-buttons">
+        <button
+          v-if="game.status === 'playing'"
+          class="btn primary"
+          @click="game.continueFromLesson()"
+        >
+          Ab hier weiterspielen
+        </button>
+        <button class="btn" @click="game.startLesson(game.lesson.id, 'play')">Nochmal üben</button>
+        <button class="btn subtle" @click="game.exitLesson(); lessonPathOpen = true">
+          Zum Lernpfad
+        </button>
+      </div>
+    </div>
+
+    <div v-if="game.lesson" class="controls">
+      <button v-if="!game.lesson.finished" class="btn" @click="game.exitLesson()">
+        ✕ Lektion beenden
+      </button>
+    </div>
+
+    <div v-else class="controls">
       <button class="btn tip-btn" :disabled="tipDisabled" @click="game.requestTip()">
         <span v-if="game.analyzing" class="spinner" aria-hidden="true" />
         <template v-else>💡</template>
@@ -166,6 +208,7 @@ function confirmNewGame() {
 
     <PromotionDialog />
     <SettingsPanel :open="settingsOpen" @close="settingsOpen = false" />
+    <LessonPath :open="lessonPathOpen" @close="lessonPathOpen = false" />
   </div>
 </template>
 
@@ -263,6 +306,45 @@ h1 {
   margin: 0;
   font-size: 14px;
   line-height: 1.45;
+}
+.lesson-box {
+  background: var(--panel);
+  border: 1px solid #63b3ed;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.lesson-box p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.lesson-finish {
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  padding: 14px;
+  text-align: center;
+}
+.finish-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+}
+.finish-stars {
+  color: #e0b34d;
+  letter-spacing: 2px;
+  margin-left: 6px;
+}
+.finish-outro {
+  margin: 8px 0 12px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.finish-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 .feedback-box {
   background: var(--panel);

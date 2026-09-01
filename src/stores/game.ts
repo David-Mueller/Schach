@@ -4,6 +4,10 @@ import { engine } from '../engine/engine'
 import { lineToEval, type Analysis } from '../engine/types'
 import { explainBestMove, pieceNameDe, sanToGerman } from '../lib/explain'
 import { newGameId, upsertGame } from '../lib/archive'
+import { LESSONS } from '../lessons/curriculum'
+import { compileLesson } from '../lessons/parse'
+import type { LessonStep } from '../lessons/types'
+import { recordResult, starsForMistakes } from '../lib/lessonProgress'
 import { judgeMove, type MoveJudgement } from '../lib/judge'
 import { sounds, vibrate } from '../lib/sound'
 import { useSettings } from './settings'
@@ -23,6 +27,21 @@ export interface Tip {
   dest: Square
   san: string
   text: string
+}
+
+/** Laufende Lektion des Lernpfads. */
+export interface LessonRuntime {
+  id: string
+  title: string
+  outro: string
+  mode: 'demo' | 'play'
+  steps: LessonStep[]
+  stepIndex: number
+  playerColor: 'white' | 'black'
+  mistakes: number
+  attemptsOnStep: number
+  finished: boolean
+  earnedStars: number | null
 }
 
 interface PersistedGame {
@@ -68,6 +87,14 @@ export const useGame = defineStore('game', {
     orientation: 'white' as 'white' | 'black',
     /** Stabile Kennung der laufenden Partie (für das Archiv). */
     gameId: newGameId(),
+
+    /** Laufende Lernpfad-Lektion (überlagert den eingestellten Spielmodus). */
+    lesson: null as LessonRuntime | null,
+    /** Aktueller Kommentar-/Coach-Text der Lektion. */
+    lessonComment: null as string | null,
+    /** »Ab hier weiterspielen«: Computer übernimmt nach einer Lektion. */
+    postLessonAi: false,
+    postLessonColor: 'white' as 'white' | 'black',
     /** Steigt bei Undo/Neustart, damit veraltete Engine-Antworten verworfen werden. */
     generation: 0,
   }),
@@ -82,10 +109,22 @@ export const useGame = defineStore('game', {
         s.capturedByBlack.reduce((a, t) => a + value(t), 0)
       )
     },
+    /** Tatsächlich wirksamer Modus: Lektion und »Weiterspielen« überlagern die Einstellung. */
+    effectiveMode(): 'lesson' | 'ai' | 'pvp' {
+      if (this.lesson) return 'lesson'
+      if (this.postLessonAi) return 'ai'
+      return useSettings().mode
+    },
+    effectivePlayerColor(): 'white' | 'black' {
+      return this.postLessonAi ? this.postLessonColor : useSettings().playerColor
+    },
     isPlayersTurn(): boolean {
-      const settings = useSettings()
-      if (settings.mode === 'pvp') return true
-      return this.turnColor === settings.playerColor && !this.thinking
+      if (this.effectiveMode === 'pvp') return true
+      if (this.effectiveMode === 'lesson') {
+        const L = this.lesson!
+        return L.mode === 'play' && !L.finished && this.turnColor === L.playerColor
+      }
+      return this.turnColor === this.effectivePlayerColor && !this.thinking
     },
   },
 
@@ -110,6 +149,8 @@ export const useGame = defineStore('game', {
     },
 
     persist() {
+      // Lektionen überschreiben den echten Spielstand nicht.
+      if (this.lesson) return
       try {
         const data: PersistedGame = {
           pgn: chess.pgn(),
@@ -189,6 +230,7 @@ export const useGame = defineStore('game', {
       const settings = useSettings()
       // Angefangene Partie nicht verlieren: vor dem Reset ins Archiv.
       if (this.status === 'playing' && this.movesSan.length >= 2) this.archiveCurrent()
+      this.clearLessonState()
       this.gameId = newGameId()
       this.generation++
       engine.stop()
@@ -215,12 +257,11 @@ export const useGame = defineStore('game', {
     },
 
     resign() {
-      if (this.status !== 'playing') return
-      const settings = useSettings()
+      if (this.status !== 'playing' || this.lesson) return
       this.status = 'resigned'
       this.winner =
-        settings.mode === 'ai'
-          ? settings.playerColor === 'white'
+        this.effectiveMode === 'ai'
+          ? this.effectivePlayerColor === 'white'
             ? 'black'
             : 'white'
           : this.turnColor === 'white'
@@ -240,11 +281,11 @@ export const useGame = defineStore('game', {
     exportPgn(): string {
       const settings = useSettings()
       const white =
-        settings.mode === 'ai' && settings.playerColor === 'black'
+        this.effectiveMode === 'ai' && this.effectivePlayerColor === 'black'
           ? `Computer (Stufe ${settings.aiLevel})`
           : 'Spieler Weiß'
       const black =
-        settings.mode === 'ai' && settings.playerColor === 'white'
+        this.effectiveMode === 'ai' && this.effectivePlayerColor === 'white'
           ? `Computer (Stufe ${settings.aiLevel})`
           : 'Spieler Schwarz'
       chess.setHeader('Event', 'SchachTrainer Partie')
@@ -264,7 +305,7 @@ export const useGame = defineStore('game', {
 
     /** Legt die aktuelle Partie im Archiv ab (bzw. aktualisiert sie dort). */
     archiveCurrent() {
-      if (this.movesSan.length < 2) return
+      if (this.lesson || this.movesSan.length < 2) return
       const pgn = this.exportPgn()
       const headers = chess.getHeaders()
       const result =
@@ -318,6 +359,12 @@ export const useGame = defineStore('game', {
     applyUserMove(from: Square, to: Square, promotion?: 'q' | 'r' | 'b' | 'n') {
       const settings = useSettings()
 
+      // In der Lektion prüft der Coach den Zug gegen die Hauptvariante.
+      if (this.lesson) {
+        this.lessonTryMove(from, to, promotion)
+        return
+      }
+
       // Patt-Schutz: Würde der Zug den Gegner sofort patt setzen, obwohl man
       // klar auf Gewinn steht, erst nachfragen (klassische Anfänger-Falle:
       // Dame erstickt den nackten König – Partie plötzlich unentschieden).
@@ -357,7 +404,7 @@ export const useGame = defineStore('game', {
         this.onGameEnd()
         return
       }
-      if (settings.mode === 'pvp') {
+      if (this.effectiveMode === 'pvp') {
         if (settings.autoFlip) this.orientation = this.turnColor
         void this.afterPlayerMove(prevEvalWhite, move.color, fenBefore, playedUci, null)
       } else {
@@ -410,7 +457,7 @@ export const useGame = defineStore('game', {
         /* Eval optional – Partie geht weiter */
       }
       then?.()
-      if (settings.mode === 'pvp') this.maybePrefetch()
+      if (this.effectiveMode === 'pvp') this.maybePrefetch()
     },
 
     /** Analyse mit Tipp-Tiefe, gecacht pro Stellung (Tipps, Zug-Kommentare, Prefetch). */
@@ -428,8 +475,8 @@ export const useGame = defineStore('game', {
      */
     maybePrefetch() {
       const settings = useSettings()
-      if (!settings.moveFeedback || this.status !== 'playing') return
-      if (settings.mode === 'ai' && this.turnColor !== settings.playerColor) return
+      if (!settings.moveFeedback || this.status !== 'playing' || this.lesson) return
+      if (this.effectiveMode === 'ai' && this.turnColor !== this.effectivePlayerColor) return
       void this.ensureAnalysis(this.fen).catch(() => {})
     },
 
@@ -477,7 +524,7 @@ export const useGame = defineStore('game', {
 
     async engineReply() {
       const settings = useSettings()
-      if (this.status !== 'playing' || settings.mode !== 'ai') return
+      if (this.status !== 'playing' || this.effectiveMode !== 'ai') return
       const gen = this.generation
       this.thinking = true
       try {
@@ -509,11 +556,10 @@ export const useGame = defineStore('game', {
 
     /** Falls der Computer am Zug ist (z. B. Mensch spielt Schwarz), Zug anstoßen. */
     maybeEngineMove() {
-      const settings = useSettings()
       if (
-        settings.mode === 'ai' &&
+        this.effectiveMode === 'ai' &&
         this.status === 'playing' &&
-        this.turnColor !== settings.playerColor &&
+        this.turnColor !== this.effectivePlayerColor &&
         !this.thinking
       ) {
         void this.engineReply()
@@ -521,7 +567,7 @@ export const useGame = defineStore('game', {
     },
 
     undo() {
-      const settings = useSettings()
+      if (this.lesson) return // Lektionen haben ihren eigenen Coach-Flow
       if (this.movesSan.length === 0) return
       this.generation++
       engine.stop()
@@ -533,10 +579,10 @@ export const useGame = defineStore('game', {
       this.clearTip()
       this.feedback = null
 
-      if (settings.mode === 'ai') {
+      if (this.effectiveMode === 'ai') {
         // Engine-Antwort mit zurücknehmen, damit der Mensch wieder am Zug ist.
         chess.undo()
-        if (chess.turn() !== (settings.playerColor === 'white' ? 'w' : 'b')) {
+        if (chess.turn() !== (this.effectivePlayerColor === 'white' ? 'w' : 'b')) {
           chess.undo()
         }
       } else {
@@ -549,6 +595,193 @@ export const useGame = defineStore('game', {
       this.sync()
       // Falls nach dem Zurücknehmen wieder der Computer dran ist (z. B. Undo
       // seines allerersten Zugs), muss er erneut angestoßen werden.
+      this.maybeEngineMove()
+      void this.refreshEval()
+      this.maybePrefetch()
+    },
+
+    // ---------- Lernpfad (Lektionen) ----------
+
+    clearLessonState() {
+      if (lessonTimer) clearTimeout(lessonTimer)
+      lessonTimer = null
+      this.lesson = null
+      this.lessonComment = null
+      this.postLessonAi = false
+    },
+
+    /** Startet eine Lektion – als »Film« (demo) oder zum Mitspielen (play). */
+    startLesson(id: string, mode: 'demo' | 'play') {
+      const lesson = LESSONS.get(id)
+      if (!lesson) return
+      let compiled
+      try {
+        compiled = compileLesson(lesson)
+      } catch {
+        return
+      }
+      // Laufende echte Partie sichern, bevor das Brett übernommen wird.
+      if (!this.lesson && this.status === 'playing' && this.movesSan.length >= 2) {
+        this.archiveCurrent()
+      }
+      this.clearLessonState()
+      this.generation++
+      engine.stop()
+      chess.load(compiled.startFen)
+      this.lesson = {
+        id,
+        title: lesson.title,
+        outro: lesson.outro,
+        mode,
+        steps: compiled.steps,
+        stepIndex: 0,
+        playerColor: lesson.playerColor,
+        mistakes: 0,
+        attemptsOnStep: 0,
+        finished: false,
+        earnedStars: null,
+      }
+      this.status = 'playing'
+      this.winner = null
+      this.thinking = false
+      this.analyzing = false
+      this.blunderPrompt = false
+      this.pattPrompt = null
+      this.pendingPromotion = null
+      this.clearTip()
+      this.feedback = null
+      this.lessonComment = lesson.intro
+      this.orientation = lesson.playerColor
+      this.sync()
+      this.scheduleLessonAuto()
+    },
+
+    /** Plant den nächsten automatischen Zug (Demo bzw. Gegnerzüge beim Mitspielen). */
+    scheduleLessonAuto() {
+      const L = this.lesson
+      if (!L || L.finished) return
+      const step = L.steps[L.stepIndex]
+      if (!step) {
+        this.finishLesson()
+        return
+      }
+      const playerChar = L.playerColor === 'white' ? 'w' : 'b'
+      if (L.mode === 'play' && step.color === playerChar) return // Spieler ist dran
+      // Nach einem Kommentar mehr Lesezeit lassen.
+      const prev = L.steps[L.stepIndex - 1]
+      const delay =
+        L.stepIndex === 0 ? 2200 : L.mode === 'demo' ? (prev?.comment ? 3000 : 1400) : 1000
+      if (lessonTimer) clearTimeout(lessonTimer)
+      lessonTimer = setTimeout(() => this.lessonPlayStep(), delay)
+    },
+
+    /** Führt den aktuellen Lektionszug automatisch aus. */
+    lessonPlayStep() {
+      const L = this.lesson
+      if (!L || L.finished) return
+      const step = L.steps[L.stepIndex]
+      if (!step) {
+        this.finishLesson()
+        return
+      }
+      let move
+      try {
+        move = chess.move({ from: step.from, to: step.to, promotion: step.promotion })
+      } catch {
+        this.finishLesson()
+        return
+      }
+      L.stepIndex++
+      L.attemptsOnStep = 0
+      this.clearTip()
+      if (step.comment) this.lessonComment = step.comment
+      this.sync()
+      this.moveEffects(move.captured !== undefined)
+      if (L.stepIndex >= L.steps.length || this.status !== 'playing') this.finishLesson()
+      else this.scheduleLessonAuto()
+    },
+
+    /** Prüft den Spielerzug gegen die Hauptvariante der Lektion. */
+    lessonTryMove(from: Square, to: Square, promotion?: 'q' | 'r' | 'b' | 'n') {
+      const settings = useSettings()
+      const L = this.lesson
+      if (!L || L.finished || L.mode !== 'play') {
+        this.sync()
+        return
+      }
+      const step = L.steps[L.stepIndex]
+      if (!step) {
+        this.finishLesson()
+        return
+      }
+      const matches =
+        step.from === from && step.to === to && (step.promotion ?? 'x') === (promotion ?? 'x')
+      if (matches) {
+        const move = chess.move({ from, to, promotion })
+        L.stepIndex++
+        L.attemptsOnStep = 0
+        this.clearTip()
+        this.lessonComment = step.comment ?? 'Richtig!'
+        this.sync()
+        this.moveEffects(move.captured !== undefined)
+        if (L.stepIndex >= L.steps.length || this.status !== 'playing') this.finishLesson()
+        else this.scheduleLessonAuto()
+        return
+      }
+      // Falscher Zug: Coach-Hinweise eskalieren, Brett zurücksetzen.
+      L.mistakes++
+      L.attemptsOnStep++
+      if (settings.sound) sounds.warn()
+      this.sync()
+      const piece = chess.get(step.from)
+      if (L.attemptsOnStep === 1 && piece) {
+        this.lessonComment = `Fast! Probier es nochmal – in dieser Lektion zieht jetzt ${withArticleNom(piece.type)}.`
+      } else {
+        this.tip = { stage: 2, orig: step.from, dest: step.to, san: step.san, text: '' }
+        this.tipStage = 2
+        this.lessonComment = `Schau auf den Pfeil: ${sanToGerman(step.san)} ist der Lektionszug.`
+      }
+    },
+
+    finishLesson() {
+      const L = this.lesson
+      if (!L || L.finished) return
+      if (lessonTimer) clearTimeout(lessonTimer)
+      L.finished = true
+      if (L.mode === 'play') {
+        recordResult(L.id, L.mistakes)
+        L.earnedStars = starsForMistakes(L.mistakes)
+      }
+      this.lessonComment = null
+      this.clearTip()
+    },
+
+    /** »Ab hier weiterspielen«: Der Computer übernimmt die Gegnerseite. */
+    continueFromLesson() {
+      const L = this.lesson
+      if (!L) return
+      this.postLessonColor = L.playerColor
+      this.lesson = null
+      this.lessonComment = null
+      this.postLessonAi = true
+      this.clearTip()
+      this.gameId = newGameId()
+      if (this.status !== 'playing') return // Lektion endete bereits mit Matt o. ä.
+      this.sync() // persistiert jetzt (Lektion beendet)
+      this.maybeEngineMove()
+      void this.refreshEval()
+      this.maybePrefetch()
+    },
+
+    /** Lektion verlassen und zum vorherigen Spielstand zurückkehren. */
+    exitLesson() {
+      const settings = useSettings()
+      this.clearLessonState()
+      this.generation++
+      engine.stop()
+      this.thinking = false
+      this.restore()
+      this.orientation = settings.mode === 'ai' ? settings.playerColor : 'white'
       this.maybeEngineMove()
       void this.refreshEval()
       this.maybePrefetch()
@@ -568,7 +801,7 @@ export const useGame = defineStore('game', {
     async refreshEval() {
       const settings = useSettings()
       if (!settings.showEval && !settings.blunderWarning) return
-      if (this.status !== 'playing') return
+      if (this.status !== 'playing' || this.lesson) return
       const gen = this.generation
       const fen = this.fen
       try {
@@ -586,6 +819,7 @@ export const useGame = defineStore('game', {
 
     /** Eskalierende Tipp-Stufen; jede Stufe kostet einen Tipp. */
     async requestTip() {
+      if (this.lesson) return // der Coach der Lektion übernimmt die Hinweise
       if (this.status !== 'playing' || !this.isPlayersTurn || this.analyzing) return
       if (this.tipStage >= 3) return
       if (this.tipsLeft === 0) return
@@ -664,6 +898,8 @@ const analysisCache = new Map<string, Analysis>()
 let pendingAfterBlunder: (() => void) | null = null
 /** true, während ein per Patt-Warnung bestätigter Zug ausgeführt wird. */
 let pattApproved = false
+/** Timer für automatische Lektionszüge (Demo/Gegner). */
+let lessonTimer: ReturnType<typeof setTimeout> | null = null
 
 function uciToSan(fen: string, uci: string): string {
   try {
@@ -684,4 +920,9 @@ function withArticleAkk(type: string): string {
   if (name === 'Dame') return 'deine Dame'
   if (name === 'Bauer') return 'deinen Bauern' // schwache Deklination
   return `deinen ${name}`
+}
+
+function withArticleNom(type: string): string {
+  const name = pieceNameDe(type)
+  return name === 'Dame' ? 'deine Dame' : `dein ${name}`
 }

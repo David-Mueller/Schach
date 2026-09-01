@@ -13,7 +13,8 @@ watch(
   () => (hidden.value = false),
 )
 
-const visible = computed(() => game.status !== 'playing' && !hidden.value)
+// Während einer Lektion übernimmt das Lektions-Abschlusspanel (z. B. Matt-Technik).
+const visible = computed(() => game.status !== 'playing' && !hidden.value && !game.lesson)
 
 const playerWon = computed(
   () => settings.mode === 'ai' && game.winner === settings.playerColor && game.status === 'checkmate',

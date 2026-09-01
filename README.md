@@ -4,7 +4,16 @@ Kleine, private Schach-Web-App zum Spielen und Lernen — komplett offline-fähi
 ohne Backend, ohne Accounts. Kernfeature: konfigurierbare Tipps, die den besten
 nächsten Zug zeigen und auf Deutsch erklären, warum er gut ist.
 
-## Features (Stand: G1 + G2)
+## Features (Stand: G1 + G2 + Lernpfad)
+
+- **Lernpfad („Fahrschule“)** 🎓: 13 Lektionen in 5 Stufen — goldene Regeln,
+  Eröffnungen (Italienisch, London, Damengambit, Blackmar-Diemer …), Taktik-
+  Grundmuster und Matt-Techniken. Jede Lektion als „Film“ ansehen oder
+  mitspielen (Coach prüft die Züge, Hinweise eskalieren von Text zu Pfeil),
+  1–3 Sterne je Durchlauf, Stufen schalten sich nacheinander frei, und am Ende
+  heißt es „Ab hier weiterspielen“ gegen den Computer. Lektionen sind
+  kommentierte PGNs (`src/lessons/data/`) — neue Inhalte sind reine Daten,
+  jede Lektion wird im Unit-Test auf Legalität aller Züge geprüft.
 
 - **Spieler vs. Computer** — Stockfish 18 (WASM) mit 5 Spielstärken (~800–2300 Elo)
 - **Spieler vs. Spieler (Hotseat)** — zu zweit an einem Gerät, optional mit Brettdrehung nach jedem Zug
