@@ -77,6 +77,10 @@ function startNewGame() {
           <input v-model="settings.blunderWarning" type="checkbox" />
         </label>
         <label class="row toggle">
+          <span>Warnung vor Patt</span>
+          <input v-model="settings.pattWarning" type="checkbox" />
+        </label>
+        <label class="row toggle">
           <span>Zug-Kommentare nach jedem Zug</span>
           <input v-model="settings.moveFeedback" type="checkbox" />
         </label>

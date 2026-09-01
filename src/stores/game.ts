@@ -282,7 +282,7 @@ export const useGame = defineStore('game', {
       // Patt-Schutz: Würde der Zug den Gegner sofort patt setzen, obwohl man
       // klar auf Gewinn steht, erst nachfragen (klassische Anfänger-Falle:
       // Dame erstickt den nackten König – Partie plötzlich unentschieden).
-      if (settings.blunderWarning && !pattApproved) {
+      if (settings.pattWarning && !pattApproved) {
         try {
           const probe = new Chess(this.fen)
           probe.move({ from, to, promotion })
