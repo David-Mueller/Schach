@@ -6,6 +6,7 @@ import MaterialBar from './components/MaterialBar.vue'
 import MoveList from './components/MoveList.vue'
 import PromotionDialog from './components/PromotionDialog.vue'
 import GameOverOverlay from './components/GameOverOverlay.vue'
+import ConfettiRain from './components/ConfettiRain.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import LessonPath from './components/LessonPath.vue'
 import { useGame } from './stores/game'
@@ -63,6 +64,11 @@ const tipDisabled = computed(
 
 const statusLine = computed(() => {
   if (game.engineError) return game.engineError
+  if (game.review) {
+    if (game.review.busy) return '🔍 Die Engine bewertet den Zug …'
+    if (game.review.index === 0) return '🔍 Rückblick – blättere mit ▶ durch die Partie.'
+    return null
+  }
   if (game.lesson) {
     if (game.lesson.finished) return null
     if (game.lesson.mode === 'demo') return '🎬 Lies in Ruhe – »Weiter« spielt den nächsten Zug.'
@@ -119,7 +125,7 @@ function confirmNewGame() {
       </div>
     </header>
 
-    <EvalBar v-if="settings.showEval && !game.lesson" />
+    <EvalBar v-if="settings.showEval && !game.lesson && !game.review" />
 
     <main class="board-area">
       <ChessBoard />
@@ -201,6 +207,48 @@ function confirmNewGame() {
       </button>
     </div>
 
+    <div v-else-if="game.review" class="controls review-controls">
+      <button
+        class="btn nav-btn"
+        :disabled="game.review.index === 0"
+        aria-label="Zum Anfang"
+        @click="game.reviewFirst()"
+      >
+        ⏮
+      </button>
+      <button
+        class="btn nav-btn"
+        :disabled="game.review.index === 0"
+        aria-label="Zug zurück"
+        @click="game.reviewPrev()"
+      >
+        ◀
+      </button>
+      <span class="review-counter">
+        {{ game.review.index }}/{{ game.review.moves.length }}
+        <span v-if="game.review.busy" class="spinner" aria-hidden="true" />
+      </span>
+      <button
+        class="btn nav-btn"
+        :disabled="game.review.index >= game.review.moves.length"
+        aria-label="Nächster Zug"
+        @click="game.reviewNext()"
+      >
+        ▶
+      </button>
+      <button
+        class="btn nav-btn"
+        :disabled="game.review.index >= game.review.moves.length"
+        aria-label="Zum Ende"
+        @click="game.reviewLast()"
+      >
+        ⏭
+      </button>
+      <button class="btn subtle" aria-label="Rückblick schließen" @click="game.exitReview()">
+        ✕
+      </button>
+    </div>
+
     <div v-else class="controls">
       <button class="btn tip-btn" :disabled="tipDisabled" @click="game.requestTip()">
         <span v-if="game.analyzing" class="spinner" aria-hidden="true" />
@@ -211,6 +259,13 @@ function confirmNewGame() {
         ↩︎ Zurück
       </button>
       <button class="btn" @click="game.flipBoard()">⇅ Drehen</button>
+      <button
+        v-if="game.status !== 'playing' && game.movesSan.length > 0"
+        class="btn"
+        @click="game.startReview()"
+      >
+        🔍 Rückblick
+      </button>
       <button v-if="game.status === 'playing' && game.movesSan.length > 0" class="btn" @click="game.resign()">
         Aufgeben
       </button>
@@ -224,6 +279,13 @@ function confirmNewGame() {
         ✓ Bereit für Offline-Spiel – die App funktioniert jetzt auch ohne Internet.
       </div>
     </transition>
+
+    <div
+      v-if="game.lesson?.finished && game.lesson.earnedStars === 3"
+      class="confetti-screen"
+    >
+      <ConfettiRain :count="48" />
+    </div>
 
     <PromotionDialog />
     <SettingsPanel :open="settingsOpen" @close="settingsOpen = false" />
@@ -483,6 +545,27 @@ h1 {
 .controls .btn {
   flex: 1;
   white-space: nowrap;
+}
+.review-controls {
+  align-items: center;
+}
+.review-controls .nav-btn {
+  font-size: 15px;
+  padding: 10px 6px;
+}
+.review-counter {
+  flex: 0 0 auto;
+  min-width: 56px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.confetti-screen {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 45;
 }
 .tip-btn {
   border-color: var(--accent);

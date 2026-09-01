@@ -57,6 +57,7 @@ function schedulePieceZ() {
 }
 
 function movableColor(): 'white' | 'black' | undefined {
+  if (game.review) return undefined // Rückblick: Brett ist reine Anzeige
   if (game.status !== 'playing' || game.blunderPrompt || game.pendingPromotion || game.pattPrompt)
     return undefined
   if (game.effectiveMode === 'lesson') {
@@ -148,6 +149,8 @@ watch(
     game.pattPrompt,
     game.lesson,
     game.lesson?.finished,
+    game.review,
+    game.review?.index,
     game.postLessonAi,
     settings.mode,
     settings.playerColor,

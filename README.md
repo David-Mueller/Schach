@@ -12,7 +12,8 @@ nächsten Zug zeigen und auf Deutsch erklären, warum er gut ist.
   wird per „Weiter“-Knopf im eigenen Tempo abgespielt) oder geführt mitspielen:
   Der Coach markiert die Figur, erklärt den Zug vorab, und beim Fehlversuch
   zeigt sofort ein Pfeil den Lektionszug. 1–3 Sterne je Durchlauf
-  (fehlerfrei = 3), Stufen schalten sich nacheinander frei, und am Ende
+  (fehlerfrei = 3, mit Konfetti 🎉), Sternezähler und Stufen-Pokale 🏆 im
+  Lernpfad, Stufen schalten sich nacheinander frei, und am Ende
   heißt es „Ab hier weiterspielen“ gegen den Computer. Lektionen sind
   kommentierte PGNs (`src/lessons/data/`) — neue Inhalte sind reine Daten,
   jede Lektion wird im Unit-Test auf Legalität aller Züge geprüft.
@@ -24,6 +25,10 @@ nächsten Zug zeigen und auf Deutsch erklären, warum er gut ist.
   2. Bester Zug als Pfeil auf dem Brett
   3. Deutsche Erklärung, *warum* der Zug gut ist (regelbasiert: Matt, Materialgewinn, Gabel, Hängefigur, Rochade …)
 - **Fehlerwarnung** (abschaltbar): Nach einem groben Patzer (Bewertungssprung > 2 Bauern) fragt die App, ob der Zug zurückgenommen werden soll — kostet kein Tipp-Budget
+- **Partie-Rückblick** 🔍: fertige Partien (auch aus dem Archiv) Zug für Zug
+  durchblättern — die Engine bewertet jeden Zug („Sehr gut!“ bis „Grober
+  Fehler“, mit Begründung auf Deutsch) und zeigt bei Fehlern den besseren Zug
+  als Pfeil. Aus eigenen Fehlern lernen, nicht nur aus Lektionen!
 - **Legale Züge werden immer angezeigt** (Punkte auf den Zielfeldern) — zentrales Lernfeature
 - Bewertungsbalken (zuschaltbar), Zugliste in deutscher Notation, geschlagene Figuren + Materialbilanz
 - Umwandlungsdialog, Schach-/Matt-Anzeige, Zug-Animationen, Sounds (WebAudio-synthetisiert), Vibration auf Mobilgeräten

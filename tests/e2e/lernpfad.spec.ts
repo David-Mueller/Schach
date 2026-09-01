@@ -66,6 +66,43 @@ test.describe('Lernpfad (Fahrschule)', () => {
     expect(errors).toEqual([])
   })
 
+  test('Fehlerfreie Lektion: 3 Sterne, Konfetti und Sternezähler', async ({ page }) => {
+    const errors = collectErrors(page)
+    await prepare(page)
+
+    await page.click('[aria-label="Lernpfad"]')
+    await page.locator('.lesson-row .btn.primary').first().click()
+    await expect(page.locator('.lesson-task')).toBeVisible({ timeout: 10_000 })
+
+    const whiteMoves: [number, number][][] = [
+      [[4, 2], [4, 4]], // e4
+      [[6, 1], [5, 3]], // Sf3
+      [[5, 1], [2, 4]], // Lc4
+      [[1, 1], [2, 3]], // Sc3
+      [[3, 2], [3, 3]], // d3
+      [[4, 1], [6, 1]], // O-O
+    ]
+    for (const [from, to] of whiteMoves) {
+      await page.waitForFunction(
+        () => document.querySelector('.status')?.textContent?.includes('Du bist dran') ?? false,
+        null,
+        { timeout: 15_000 },
+      )
+      await tapMove(page, from, to)
+    }
+
+    // Fehlerfrei → 3 Sterne + Konfetti
+    await expect(page.locator('.lesson-finish')).toBeVisible({ timeout: 15_000 })
+    await expect(page.locator('.finish-stars')).toHaveText(/★★★/)
+    await expect(page.locator('.confetti-screen')).toBeVisible()
+
+    // Sternezähler im Lernpfad zeigt die gesammelten Sterne
+    await page.getByRole('button', { name: 'Zum Lernpfad' }).click()
+    await expect(page.locator('.total-stars')).toContainText('3/')
+
+    expect(errors).toEqual([])
+  })
+
   test('Film-Modus: »Weiter« spielt die Züge einzeln ab, kein Autoplay', async ({ page }) => {
     const errors = collectErrors(page)
     await prepare(page)

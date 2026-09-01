@@ -285,7 +285,16 @@ function startNewGame() {
               {{ RESULT_LABEL[entry.result] ?? entry.result }}
             </span>
           </div>
-          <button class="btn small" @click="downloadPgn(entry.pgn, new Date(entry.date))">PGN</button>
+          <div class="archive-actions">
+            <button
+              class="btn small"
+              :aria-label="`Rückblick für Partie vom ${archiveDateLabel(entry.date)}`"
+              @click="game.startReview(entry.pgn); emit('close')"
+            >
+              🔍
+            </button>
+            <button class="btn small" @click="downloadPgn(entry.pgn, new Date(entry.date))">PGN</button>
+          </div>
         </div>
       </section>
 
@@ -409,6 +418,11 @@ input[type='checkbox'] {
 .btn.small {
   padding: 6px 10px;
   font-size: 12px;
+  flex-shrink: 0;
+}
+.archive-actions {
+  display: flex;
+  gap: 6px;
   flex-shrink: 0;
 }
 .version {

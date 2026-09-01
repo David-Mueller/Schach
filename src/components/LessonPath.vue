@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { STAGES, LESSONS } from '../lessons/curriculum'
 import { getProgress, isStageUnlocked, type LessonResult } from '../lib/lessonProgress'
 import { useGame } from '../stores/game'
@@ -23,6 +23,17 @@ function stars(id: string): string {
   return '★'.repeat(s) + '☆'.repeat(Math.max(0, 3 - s))
 }
 
+const allLessonIds = STAGES.flatMap((s) => s.lessons)
+const totalStars = computed(() =>
+  allLessonIds.reduce((sum, id) => sum + (progress.value[id]?.stars ?? 0), 0),
+)
+const maxStars = allLessonIds.length * 3
+
+/** Pokal für eine Stufe: alle Lektionen fehlerfrei (3 Sterne) geschafft. */
+function stageTrophy(lessonIds: string[]): boolean {
+  return lessonIds.length > 0 && lessonIds.every((id) => (progress.value[id]?.stars ?? 0) === 3)
+}
+
 function start(id: string, mode: 'demo' | 'play') {
   game.startLesson(id, mode)
   emit('close')
@@ -34,6 +45,7 @@ function start(id: string, mode: 'demo' | 'play') {
     <div class="panel">
       <div class="head">
         <h2>🎓 Lernpfad</h2>
+        <span class="total-stars" title="Gesammelte Sterne">⭐ {{ totalStars }}/{{ maxStars }}</span>
         <button class="btn subtle" aria-label="Schließen" @click="emit('close')">✕</button>
       </div>
       <p class="tagline">Deine Schach-Fahrschule: Stufe für Stufe besser werden.</p>
@@ -43,6 +55,13 @@ function start(id: string, mode: 'demo' | 'play') {
           <h3>
             <span v-if="!isStageUnlocked(index, progress)" class="lock">🔒</span>
             {{ stage.title }}
+            <span
+              v-if="stageTrophy(stage.lessons)"
+              class="trophy"
+              title="Alle Lektionen fehlerfrei geschafft!"
+            >
+              🏆
+            </span>
           </h3>
           <p class="stage-sub">{{ stage.subtitle }}</p>
           <template v-if="isStageUnlocked(index, progress)">
@@ -94,6 +113,20 @@ h2 {
   margin: 4px 0 12px;
   font-size: 12.5px;
   color: var(--muted);
+}
+.total-stars {
+  margin-left: auto;
+  margin-right: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #e0b34d;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+.trophy {
+  margin-left: 2px;
 }
 .stage {
   border: 1px solid var(--border);

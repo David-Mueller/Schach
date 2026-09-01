@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useGame } from '../stores/game'
 import { useSettings } from '../stores/settings'
 import { downloadPgn } from '../lib/pgnExport'
+import ConfettiRain from './ConfettiRain.vue'
 
 const game = useGame()
 const settings = useSettings()
@@ -13,8 +14,11 @@ watch(
   () => (hidden.value = false),
 )
 
-// Während einer Lektion übernimmt das Lektions-Abschlusspanel (z. B. Matt-Technik).
-const visible = computed(() => game.status !== 'playing' && !hidden.value && !game.lesson)
+// Während einer Lektion übernimmt das Lektions-Abschlusspanel (z. B. Matt-Technik);
+// im Rückblick soll das Brett frei sichtbar bleiben.
+const visible = computed(
+  () => game.status !== 'playing' && !hidden.value && !game.lesson && !game.review,
+)
 
 const playerWon = computed(
   () => settings.mode === 'ai' && game.winner === settings.playerColor && game.status === 'checkmate',
@@ -41,28 +45,19 @@ const subtitle = computed(() => {
   return ''
 })
 
-const confetti = Array.from({ length: 24 }, (_, i) => ({
-  left: `${(i * 41) % 100}%`,
-  delay: `${(i % 8) * 0.18}s`,
-  hue: (i * 47) % 360,
-}))
 </script>
 
 <template>
   <div v-if="visible" class="overlay">
-    <div v-if="playerWon" class="confetti" aria-hidden="true">
-      <span
-        v-for="(c, i) in confetti"
-        :key="i"
-        class="piece"
-        :style="{ left: c.left, animationDelay: c.delay, background: `hsl(${c.hue} 80% 60%)` }"
-      />
-    </div>
+    <ConfettiRain v-if="playerWon" :count="24" />
     <div class="dialog">
       <p class="title">{{ title }}</p>
       <p v-if="subtitle" class="subtitle">{{ subtitle }}</p>
       <div class="buttons">
         <button class="btn primary" @click="game.newGame()">Neue Partie</button>
+        <button v-if="game.movesSan.length > 0" class="btn" @click="game.startReview()">
+          🔍 Rückblick – Züge bewerten
+        </button>
         <button class="btn" @click="downloadPgn(game.exportPgn())">PGN speichern</button>
         <button class="btn subtle" @click="hidden = true">Brett ansehen</button>
       </div>
@@ -104,28 +99,5 @@ const confetti = Array.from({ length: 24 }, (_, i) => ({
   flex-direction: column;
   gap: 8px;
   margin-top: 16px;
-}
-.confetti {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-.piece {
-  position: absolute;
-  top: -12px;
-  width: 9px;
-  height: 14px;
-  border-radius: 2px;
-  animation: fall 2.6s linear infinite;
-}
-@keyframes fall {
-  0% {
-    transform: translateY(-20px) rotate(0deg);
-    opacity: 1;
-  }
-  100% {
-    transform: translateY(110vh) rotate(540deg);
-    opacity: 0.6;
-  }
 }
 </style>

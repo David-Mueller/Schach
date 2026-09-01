@@ -44,6 +44,28 @@ export interface LessonRuntime {
   earnedStars: number | null
 }
 
+/** Ein Halbzug im Partie-Rückblick. */
+interface ReviewMove {
+  san: string
+  uci: string
+  color: 'w' | 'b'
+  captured?: string
+}
+
+/** Laufender Partie-Rückblick (Blättern durch eine fertige Partie). */
+export interface ReviewState {
+  moves: ReviewMove[]
+  /** fens[0] = Startstellung, fens[i] = Stellung nach Halbzug i. */
+  fens: string[]
+  /** Aktuelle Position: 0 (Start) … moves.length. */
+  index: number
+  /** Bewertung je Halbzug (lazy berechnet beim Blättern). */
+  judgements: (MoveJudgement | null)[]
+  /** Bester Engine-Zug (UCI) in der Stellung vor Halbzug i. */
+  best: (string | null)[]
+  busy: boolean
+}
+
 interface PersistedGame {
   pgn: string
   tipsLeft: number
@@ -88,6 +110,9 @@ export const useGame = defineStore('game', {
     /** Stabile Kennung der laufenden Partie (für das Archiv). */
     gameId: newGameId(),
 
+    /** Laufender Partie-Rückblick (überlagert die Brettanzeige, nicht die Partie). */
+    review: null as ReviewState | null,
+
     /** Laufende Lernpfad-Lektion (überlagert den eingestellten Spielmodus). */
     lesson: null as LessonRuntime | null,
     /** Aktueller Kommentar-/Coach-Text der Lektion. */
@@ -125,6 +150,7 @@ export const useGame = defineStore('game', {
       return !!this.lesson && !this.lesson.finished && this.lesson.mode === 'demo'
     },
     isPlayersTurn(): boolean {
+      if (this.review) return false
       if (this.effectiveMode === 'pvp') return true
       if (this.effectiveMode === 'lesson') {
         const L = this.lesson!
@@ -234,6 +260,7 @@ export const useGame = defineStore('game', {
 
     newGame() {
       const settings = useSettings()
+      this.review = null
       // Angefangene Partie nicht verlieren: vor dem Reset ins Archiv.
       if (this.status === 'playing' && this.movesSan.length >= 2) this.archiveCurrent()
       this.clearLessonState()
@@ -263,7 +290,7 @@ export const useGame = defineStore('game', {
     },
 
     resign() {
-      if (this.status !== 'playing' || this.lesson) return
+      if (this.status !== 'playing' || this.lesson || this.review) return
       this.status = 'resigned'
       this.winner =
         this.effectiveMode === 'ai'
@@ -337,6 +364,7 @@ export const useGame = defineStore('game', {
 
     /** Vom Brett gemeldeter Zug des Menschen. */
     userMove(from: Square, to: Square) {
+      if (this.review) return // Rückblick: Brett ist nur Anzeige
       if (this.status !== 'playing' || !this.isPlayersTurn || this.blunderPrompt || this.pattPrompt) {
         this.sync() // Brett zurücksetzen
         return
@@ -481,7 +509,7 @@ export const useGame = defineStore('game', {
      */
     maybePrefetch() {
       const settings = useSettings()
-      if (!settings.moveFeedback || this.status !== 'playing' || this.lesson) return
+      if (!settings.moveFeedback || this.status !== 'playing' || this.lesson || this.review) return
       if (this.effectiveMode === 'ai' && this.turnColor !== this.effectivePlayerColor) return
       void this.ensureAnalysis(this.fen).catch(() => {})
     },
@@ -573,7 +601,7 @@ export const useGame = defineStore('game', {
     },
 
     undo() {
-      if (this.lesson) return // Lektionen haben ihren eigenen Coach-Flow
+      if (this.lesson || this.review) return // Lektion/Rückblick haben eigene Flows
       if (this.movesSan.length === 0) return
       this.generation++
       engine.stop()
@@ -627,6 +655,7 @@ export const useGame = defineStore('game', {
       } catch {
         return
       }
+      this.review = null
       // Laufende echte Partie sichern, bevor das Brett übernommen wird.
       if (!this.lesson && this.status === 'playing' && this.movesSan.length >= 2) {
         this.archiveCurrent()
@@ -789,6 +818,8 @@ export const useGame = defineStore('game', {
       if (L.mode === 'play') {
         recordResult(L.id, L.mistakes)
         L.earnedStars = starsForMistakes(L.mistakes)
+        // Fehlerfrei = 3 Sterne: kleine Fanfare (Konfetti macht die UI dazu).
+        if (L.earnedStars === 3 && useSettings().sound) sounds.win()
       }
       this.lessonComment = null
       this.lessonTask = null
@@ -827,6 +858,171 @@ export const useGame = defineStore('game', {
       this.maybePrefetch()
     },
 
+    // ---------- Partie-Rückblick ----------
+
+    /**
+     * Startet den Rückblick: durch eine fertige Partie blättern, jeder Zug
+     * wird beim Anschauen von der Engine bewertet (lazy, gecacht). Ohne
+     * Argument wird die aktuelle Partie angeschaut, sonst die übergebene PGN
+     * (z. B. aus dem Archiv). Die laufende Partie bleibt unangetastet – der
+     * Rückblick überlagert nur die Anzeige.
+     */
+    startReview(pgn?: string) {
+      // Eine laufende Lektion erst sauber beenden (stellt die echte Partie
+      // wieder her); der Engine-Anstoß daraus wird gleich wieder entwertet.
+      if (this.lesson) this.exitLesson()
+      const c = new Chess()
+      try {
+        c.loadPgn(pgn ?? chess.pgn())
+      } catch {
+        return
+      }
+      const hist = c.history({ verbose: true })
+      if (hist.length === 0) return
+      this.generation++
+      engine.stop()
+      this.thinking = false
+      this.analyzing = false
+      this.blunderPrompt = false
+      this.pattPrompt = null
+      this.pendingPromotion = null
+      this.review = {
+        moves: hist.map((h) => ({
+          san: h.san,
+          uci: `${h.from}${h.to}${h.promotion ?? ''}`,
+          color: h.color,
+          captured: h.captured,
+        })),
+        fens: [hist[0]!.before, ...hist.map((h) => h.after)],
+        index: 0,
+        judgements: hist.map(() => null),
+        best: hist.map(() => null),
+        busy: false,
+      }
+      this.showReviewPosition()
+    },
+
+    reviewGoto(index: number) {
+      const R = this.review
+      if (!R) return
+      R.index = Math.max(0, Math.min(R.moves.length, index))
+      this.showReviewPosition()
+    },
+    reviewNext() {
+      if (this.review) this.reviewGoto(this.review.index + 1)
+    },
+    reviewPrev() {
+      if (this.review) this.reviewGoto(this.review.index - 1)
+    },
+    reviewFirst() {
+      this.reviewGoto(0)
+    },
+    reviewLast() {
+      if (this.review) this.reviewGoto(this.review.moves.length)
+    },
+
+    /** Überträgt die aktuelle Rückblick-Position in die Brettanzeige. */
+    showReviewPosition() {
+      const R = this.review
+      if (!R) return
+      const fen = R.fens[R.index]!
+      this.fen = fen
+      this.turnColor = fen.split(' ')[1] === 'b' ? 'black' : 'white'
+      this.dests = new Map() // Brett ist reine Anzeige
+      this.movesSan = R.moves.slice(0, R.index).map((m) => m.san)
+      const played = R.moves.slice(0, R.index)
+      this.capturedByWhite = played.filter((m) => m.color === 'w' && m.captured).map((m) => m.captured!)
+      this.capturedByBlack = played.filter((m) => m.color === 'b' && m.captured).map((m) => m.captured!)
+      try {
+        this.inCheck = new Chess(fen).inCheck()
+      } catch {
+        this.inCheck = false
+      }
+      if (R.index > 0) {
+        const uci = R.moves[R.index - 1]!.uci
+        this.lastMove = [uci.slice(0, 2) as Square, uci.slice(2, 4) as Square]
+      } else {
+        this.lastMove = null
+      }
+      this.clearTip()
+      this.feedback = null
+      this.applyReviewFeedback()
+      void this.judgeReviewMove(R.index)
+    },
+
+    /** Zeigt die (fertige) Bewertung des aktuellen Halbzugs samt Besser-Pfeil. */
+    applyReviewFeedback() {
+      const R = this.review
+      if (!R || R.index === 0) return
+      const j = R.judgements[R.index - 1]
+      if (!j) return
+      this.feedback = j
+      const best = R.best[R.index - 1]
+      const showBetter =
+        j.verdict === 'okay' ||
+        j.verdict === 'inaccuracy' ||
+        j.verdict === 'mistake' ||
+        j.verdict === 'blunder'
+      if (best && showBetter) {
+        this.tip = {
+          stage: 2,
+          orig: best.slice(0, 2) as Square,
+          dest: best.slice(2, 4) as Square,
+          san: '',
+          text: '',
+        }
+        this.tipStage = 2
+      }
+    },
+
+    /** Bewertet den Halbzug an Position `index` (lazy, Analysen gecacht). */
+    async judgeReviewMove(index: number) {
+      const R = this.review
+      if (!R || index < 1) return
+      if (R.judgements[index - 1]) return // schon bewertet (applyReviewFeedback lief)
+      const gen = this.generation
+      R.busy = true
+      try {
+        const fenBefore = R.fens[index - 1]!
+        const fenAfter = R.fens[index]!
+        const before = await this.ensureAnalysis(fenBefore)
+        if (gen !== this.generation || this.review !== R) return
+        // Endstellungen (Matt/Patt) haben keine Analyse-Linien mehr.
+        const terminal = new Chess(fenAfter).isGameOver()
+        const after = terminal ? null : await this.ensureAnalysis(fenAfter)
+        if (gen !== this.generation || this.review !== R) return
+        R.judgements[index - 1] = judgeMove(
+          fenBefore,
+          R.moves[index - 1]!.uci,
+          before.lines,
+          after?.lines ?? [],
+        )
+        R.best[index - 1] = before.lines[0]?.move ?? null
+        if (R.index === index) this.applyReviewFeedback()
+        // Nächste Stellung vorab analysieren, damit das Blättern flüssig bleibt.
+        const nextFen = R.fens[index + 1]
+        if (nextFen && !new Chess(nextFen).isGameOver()) {
+          void this.ensureAnalysis(nextFen).catch(() => {})
+        }
+      } catch {
+        /* Bewertung optional – Blättern geht trotzdem */
+      } finally {
+        if (this.review === R) R.busy = false
+      }
+    },
+
+    /** Rückblick schließen und zur echten Partie-Anzeige zurückkehren. */
+    exitReview() {
+      if (!this.review) return
+      this.review = null
+      this.feedback = null
+      this.clearTip()
+      this.sync()
+      this.maybeEngineMove()
+      void this.refreshEval()
+      this.maybePrefetch()
+    },
+
     /**
      * Vor Profilwechsel/Backup-Import: Engine anhalten und laufende Antworten
      * entwerten, damit zwischen dem Datentausch im localStorage und dem
@@ -852,7 +1048,7 @@ export const useGame = defineStore('game', {
     async refreshEval() {
       const settings = useSettings()
       if (!settings.showEval && !settings.blunderWarning) return
-      if (this.status !== 'playing' || this.lesson) return
+      if (this.status !== 'playing' || this.lesson || this.review) return
       const gen = this.generation
       const fen = this.fen
       try {
