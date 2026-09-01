@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { watch } from 'vue'
 
 export type Mode = 'pvp' | 'ai'
+export type BoardStyle = '2d' | '3d'
 
 export interface SettingsState {
   mode: Mode
@@ -18,6 +19,8 @@ export interface SettingsState {
   moveFeedback: boolean
   sound: boolean
   haptics: boolean
+  /** Brett-Ansicht: klassisch flach oder mit plastischen 3D-Figuren. */
+  boardStyle: BoardStyle
 }
 
 const STORAGE_KEY = 'schach.settings.v1'
@@ -33,6 +36,7 @@ const defaults: SettingsState = {
   moveFeedback: false,
   sound: true,
   haptics: true,
+  boardStyle: '3d',
 }
 
 function load(): SettingsState {

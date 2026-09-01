@@ -79,6 +79,13 @@ function confirmNewGame() {
       <div class="topbar-right">
         <span class="tips-badge" title="Tipps übrig">💡 {{ tipCountLabel }}</span>
         <button
+          class="style-toggle"
+          :aria-label="settings.boardStyle === '3d' ? 'Zur 2D-Ansicht wechseln' : 'Zur 3D-Ansicht wechseln'"
+          @click="settings.boardStyle = settings.boardStyle === '3d' ? '2d' : '3d'"
+        >
+          {{ settings.boardStyle === '3d' ? '3D' : '2D' }}
+        </button>
+        <button
           v-if="fullscreenAvailable"
           class="icon-btn fullscreen-btn"
           :class="{ active: isFullscreen }"
@@ -193,6 +200,16 @@ h1 {
   color: var(--muted);
   font-size: 23px;
   line-height: 1;
+}
+.style-toggle {
+  background: var(--panel);
+  color: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 5px 8px;
+  cursor: pointer;
 }
 .fullscreen-btn.active {
   color: var(--accent);

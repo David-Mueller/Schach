@@ -51,6 +51,9 @@ function buildConfig(): Config {
       },
     },
     drawable: { enabled: false, autoShapes: tipShapes() },
+    // 3D-Figuren ragen über ihr Feld hinaus – hintere Reihen müssen hinter
+    // vorderen liegen, chessground vergibt dafür z-Indizes pro Reihe.
+    addPieceZIndex: settings.boardStyle === '3d',
   }
 }
 
@@ -96,6 +99,7 @@ watch(
     game.pendingPromotion,
     settings.mode,
     settings.playerColor,
+    settings.boardStyle,
   ],
   () => api?.set(buildConfig()),
   { flush: 'post' },
@@ -103,7 +107,7 @@ watch(
 </script>
 
 <template>
-  <div ref="el" class="board" />
+  <div ref="el" class="board" :class="{ 'board--3d': settings.boardStyle === '3d' }" />
 </template>
 
 <style scoped>

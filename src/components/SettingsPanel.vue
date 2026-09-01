@@ -87,6 +87,18 @@ function startNewGame() {
       </section>
 
       <section>
+        <h3>Aussehen</h3>
+        <div class="seg">
+          <button :class="{ active: settings.boardStyle === '2d' }" @click="settings.boardStyle = '2d'">
+            2D klassisch
+          </button>
+          <button :class="{ active: settings.boardStyle === '3d' }" @click="settings.boardStyle = '3d'">
+            3D-Figuren
+          </button>
+        </div>
+      </section>
+
+      <section>
         <h3>Gerät</h3>
         <label class="row toggle">
           <span>Sounds</span>

@@ -63,3 +63,37 @@ button {
   border-radius: 4px;
   overflow: hidden;
 }
+
+/*
+ * 3D-Ansicht: Brett bleibt gerade von oben, nur die Figuren sind plastische,
+ * vorgerenderte Sprites, die nach oben über ihr Feld hinausragen.
+ * Höhe 19.5% = 1.56 Felder; margin-top zieht die Box um die Differenz hoch,
+ * damit der Figurenfuß auf dem Feld steht (Margin-% beziehen sich auf die
+ * Containerbreite, das Brett ist quadratisch – passt also auch vertikal).
+ */
+/* Figuren dürfen oben über den Brettrand hinausragen (8. Reihe) */
+.board--3d .cg-wrap {
+  overflow: visible;
+}
+.board--3d {
+  margin-top: 16px; /* Platz für die Köpfe der hintersten Reihe */
+}
+.board--3d piece {
+  height: 21%;
+  margin-top: -8.5%;
+  background-size: contain;
+  background-position: center bottom;
+  background-repeat: no-repeat;
+}
+.board--3d piece.white.pawn   { background-image: url('/pieces3d/wP.png'); }
+.board--3d piece.white.knight { background-image: url('/pieces3d/wN.png'); }
+.board--3d piece.white.bishop { background-image: url('/pieces3d/wB.png'); }
+.board--3d piece.white.rook   { background-image: url('/pieces3d/wR.png'); }
+.board--3d piece.white.queen  { background-image: url('/pieces3d/wQ.png'); }
+.board--3d piece.white.king   { background-image: url('/pieces3d/wK.png'); }
+.board--3d piece.black.pawn   { background-image: url('/pieces3d/bP.png'); }
+.board--3d piece.black.knight { background-image: url('/pieces3d/bN.png'); }
+.board--3d piece.black.bishop { background-image: url('/pieces3d/bB.png'); }
+.board--3d piece.black.rook   { background-image: url('/pieces3d/bR.png'); }
+.board--3d piece.black.queen  { background-image: url('/pieces3d/bQ.png'); }
+.board--3d piece.black.king   { background-image: url('/pieces3d/bK.png'); }
