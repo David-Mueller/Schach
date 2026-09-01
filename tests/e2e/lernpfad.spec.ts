@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { LEVELS } from '../../src/lessons/curriculum'
 import { collectErrors, prepare, tapMove, waitForStatus } from './helpers'
 
 test.describe('Lernpfad (Fahrschule)', () => {
@@ -128,6 +129,52 @@ test.describe('Lernpfad (Fahrschule)', () => {
     }
     await expect(page.locator('.lesson-finish')).toBeVisible()
     await expect(page.locator('.finish-stars')).toHaveCount(0)
+
+    expect(errors).toEqual([])
+  })
+
+  test('Level 2 schaltet erst mit allen 39 Sternen frei', async ({ page }) => {
+    const errors = collectErrors(page)
+    await prepare(page)
+
+    const level1Ids = LEVELS[0]!.stages.flatMap((s) => s.lessons)
+    const seedProgress = (stars: number[]) =>
+      page.evaluate(
+        (entries) => localStorage.setItem('schach.lernpfad.v1', JSON.stringify(entries)),
+        Object.fromEntries(
+          level1Ids.map((id, i) => [id, { stars: stars[i], completedAt: '2026-01-01T00:00:00Z' }]),
+        ),
+      )
+
+    // Ohne Fortschritt: Level-2-Tab gesperrt, Antippen zeigt den Hinweis
+    await page.click('[aria-label="Lernpfad"]')
+    await expect(page.locator('.level-tab').nth(1)).toContainText('🔒')
+    await page.locator('.level-tab').nth(1).click()
+    await expect(page.locator('.level-locked-hint')).toContainText('39 Sterne')
+    await expect(page.locator('.stage.locked')).toHaveCount(5)
+    await expect(page.locator('.lesson-row')).toHaveCount(0)
+
+    // 38 von 39 Sternen: bleibt gesperrt
+    await seedProgress(level1Ids.map((_, i) => (i === 0 ? 2 : 3)))
+    await page.click('[aria-label="Schließen"]')
+    await page.click('[aria-label="Lernpfad"]')
+    await page.locator('.level-tab').nth(1).click()
+    await expect(page.locator('.level-locked-hint')).toContainText('schon 38')
+
+    // Alle 39 Sterne: Level 2 offen und wird automatisch angezeigt
+    await seedProgress(level1Ids.map(() => 3))
+    await page.click('[aria-label="Schließen"]')
+    await page.click('[aria-label="Lernpfad"]')
+    await expect(page.locator('.level-tab.active')).toContainText('Level 2')
+    await expect(page.locator('.total-stars')).toContainText('0/39')
+    await expect(page.locator('.stage').first()).toContainText('Stufe 6')
+    await expect(page.locator('.stage').first()).not.toHaveClass(/locked/)
+    await expect(page.locator('.stage').nth(1)).toHaveClass(/locked/)
+
+    // Erste Level-2-Lektion (mit Schwarz) startet und der Coach meldet sich
+    await page.locator('.lesson-row .btn.primary').first().click()
+    await expect(page.locator('.lesson-box')).toBeVisible({ timeout: 10_000 })
+    await waitForStatus(page, 'Du bist dran', 15_000)
 
     expect(errors).toEqual([])
   })

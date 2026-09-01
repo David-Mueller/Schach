@@ -6,9 +6,14 @@ nächsten Zug zeigen und auf Deutsch erklären, warum er gut ist.
 
 ## Features (Stand: G1 + G2 + Lernpfad)
 
-- **Lernpfad („Fahrschule“)** 🎓: 13 Lektionen in 5 Stufen — goldene Regeln,
-  Eröffnungen (Italienisch, London, Damengambit, Blackmar-Diemer …), Taktik-
-  Grundmuster und Matt-Techniken. Jede Lektion als „Film“ ansehen (jeder Zug
+- **Lernpfad („Fahrschule“)** 🎓: 26 Lektionen in 2 Leveln à 5 Stufen.
+  Level 1 (Grundausbildung): goldene Regeln, Eröffnungen (Italienisch, London,
+  Damengambit, Blackmar-Diemer …), Taktik-Grundmuster und Matt-Techniken.
+  Level 2 (Meisterklasse) schaltet erst frei, wenn alle 39 Sterne von Level 1
+  gesammelt sind: Spielen mit Schwarz (Sizilianisch, Caro-Kann, Französisch),
+  Spieß/Abzug/Doppelangriff, Endspiel-Schule (Opposition, Quadratregel),
+  Matt-Kunst (Grundreihe, Ersticktes Matt) und Angriffspläne (Griechisches
+  Geschenk, Königsgambit). Jede Lektion als „Film“ ansehen (jeder Zug
   wird per „Weiter“-Knopf im eigenen Tempo abgespielt) oder geführt mitspielen:
   Der Coach markiert die Figur, erklärt den Zug vorab, und beim Fehlversuch
   zeigt sofort ein Pfeil den Lektionszug. 1–3 Sterne je Durchlauf

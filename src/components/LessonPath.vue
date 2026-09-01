@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { STAGES, LESSONS } from '../lessons/curriculum'
-import { getProgress, isStageUnlocked, type LessonResult } from '../lib/lessonProgress'
+import { LEVELS, LESSONS } from '../lessons/curriculum'
+import {
+  getProgress,
+  isLevelUnlocked,
+  isStageUnlocked,
+  levelMaxStars,
+  levelStars,
+  type LessonResult,
+} from '../lib/lessonProgress'
 import { useGame } from '../stores/game'
 
 const props = defineProps<{ open: boolean }>()
@@ -9,11 +16,21 @@ const emit = defineEmits<{ close: [] }>()
 
 const game = useGame()
 const progress = ref<Record<string, LessonResult>>({})
+const activeLevel = ref(0)
 
 watch(
   () => props.open,
   (open) => {
-    if (open) progress.value = getProgress()
+    if (!open) return
+    progress.value = getProgress()
+    // Automatisch das erste freigeschaltete Level mit offenen Sternen zeigen.
+    let pick = 0
+    for (let i = 0; i < LEVELS.length; i++) {
+      if (!isLevelUnlocked(i, progress.value)) break
+      pick = i
+      if (levelStars(i, progress.value) < levelMaxStars(i)) break
+    }
+    activeLevel.value = pick
   },
   { immediate: true },
 )
@@ -23,11 +40,28 @@ function stars(id: string): string {
   return '★'.repeat(s) + '☆'.repeat(Math.max(0, 3 - s))
 }
 
-const allLessonIds = STAGES.flatMap((s) => s.lessons)
-const totalStars = computed(() =>
-  allLessonIds.reduce((sum, id) => sum + (progress.value[id]?.stars ?? 0), 0),
+function unlocked(levelIndex: number): boolean {
+  return isLevelUnlocked(levelIndex, progress.value)
+}
+
+const level = computed(() => LEVELS[activeLevel.value]!)
+const starsLabel = computed(
+  () => `${levelStars(activeLevel.value, progress.value)}/${levelMaxStars(activeLevel.value)}`,
 )
-const maxStars = allLessonIds.length * 3
+
+/** Hinweistext, solange das angezeigte Level noch gesperrt ist. */
+const lockedLevelHint = computed(() => {
+  if (unlocked(activeLevel.value)) return null
+  const prev = LEVELS[activeLevel.value - 1]
+  if (!prev) return null
+  const have = levelStars(activeLevel.value - 1, progress.value)
+  const need = levelMaxStars(activeLevel.value - 1)
+  return (
+    `Sammle alle ⭐ ${need} Sterne in ${prev.title}, um ${level.value.title} ` +
+    `(„${level.value.subtitle}“) freizuschalten – du hast schon ${have}. ` +
+    `Spiel Lektionen fehlerfrei nach, um 3 Sterne zu holen!`
+  )
+})
 
 /** Pokal für eine Stufe: alle Lektionen fehlerfrei (3 Sterne) geschafft. */
 function stageTrophy(lessonIds: string[]): boolean {
@@ -45,15 +79,34 @@ function start(id: string, mode: 'demo' | 'play') {
     <div class="panel">
       <div class="head">
         <h2>🎓 Lernpfad</h2>
-        <span class="total-stars" title="Gesammelte Sterne">⭐ {{ totalStars }}/{{ maxStars }}</span>
+        <span class="total-stars" title="Gesammelte Sterne in diesem Level">⭐ {{ starsLabel }}</span>
         <button class="btn subtle" aria-label="Schließen" @click="emit('close')">✕</button>
       </div>
       <p class="tagline">Deine Schach-Fahrschule: Stufe für Stufe besser werden.</p>
 
-      <template v-for="(stage, index) in STAGES" :key="stage.id">
-        <section v-if="stage.lessons.length" class="stage" :class="{ locked: !isStageUnlocked(index, progress) }">
+      <div class="level-tabs">
+        <button
+          v-for="(lvl, i) in LEVELS"
+          :key="lvl.id"
+          class="level-tab"
+          :class="{ active: activeLevel === i, 'tab-locked': !unlocked(i) }"
+          @click="activeLevel = i"
+        >
+          <span class="level-name">{{ unlocked(i) ? '' : '🔒 ' }}{{ lvl.title }}</span>
+          <span class="level-sub">{{ lvl.subtitle }}</span>
+        </button>
+      </div>
+
+      <p v-if="lockedLevelHint" class="level-locked-hint">🔒 {{ lockedLevelHint }}</p>
+
+      <template v-for="(stage, index) in level.stages" :key="stage.id">
+        <section
+          v-if="stage.lessons.length"
+          class="stage"
+          :class="{ locked: !isStageUnlocked(activeLevel, index, progress) }"
+        >
           <h3>
-            <span v-if="!isStageUnlocked(index, progress)" class="lock">🔒</span>
+            <span v-if="!isStageUnlocked(activeLevel, index, progress)" class="lock">🔒</span>
             {{ stage.title }}
             <span
               v-if="stageTrophy(stage.lessons)"
@@ -64,7 +117,7 @@ function start(id: string, mode: 'demo' | 'play') {
             </span>
           </h3>
           <p class="stage-sub">{{ stage.subtitle }}</p>
-          <template v-if="isStageUnlocked(index, progress)">
+          <template v-if="isStageUnlocked(activeLevel, index, progress)">
             <div v-for="id in stage.lessons" :key="id" class="lesson-row">
               <div class="lesson-info">
                 <span class="lesson-title">{{ LESSONS.get(id)?.title }}</span>
@@ -78,7 +131,9 @@ function start(id: string, mode: 'demo' | 'play') {
               </div>
             </div>
           </template>
-          <p v-else class="locked-hint">Schließe die vorherige Stufe ab (je mindestens 1 ★).</p>
+          <p v-else-if="unlocked(activeLevel)" class="locked-hint">
+            Schließe die vorherige Stufe ab (je mindestens 1 ★).
+          </p>
         </section>
       </template>
     </div>
@@ -127,6 +182,49 @@ h2 {
 }
 .trophy {
   margin-left: 2px;
+}
+.level-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.level-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 6px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.level-tab.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+}
+.level-tab.tab-locked {
+  opacity: 0.65;
+}
+.level-name {
+  font-size: 13.5px;
+  font-weight: 800;
+}
+.level-sub {
+  font-size: 11px;
+  color: var(--muted);
+}
+.level-locked-hint {
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  background: var(--panel);
+  border: 1px solid #b58726;
+  border-radius: 10px;
+  padding: 9px 11px;
 }
 .stage {
   border: 1px solid var(--border);

@@ -1,7 +1,7 @@
 // Lernpfad-Fortschritt in localStorage – gleiche Philosophie wie das
 // Partie-Archiv: offline, gerätgebunden, robust gegen kaputte Daten.
 
-import { STAGES } from '../lessons/curriculum'
+import { LEVELS } from '../lessons/curriculum'
 
 export interface LessonResult {
   /** 1–3 Sterne (3 = fehlerfrei). Es zählt immer das beste Ergebnis. */
@@ -50,13 +50,49 @@ export function recordResult(lessonId: string, mistakes: number): LessonResult {
   return result
 }
 
-/** Eine Stufe ist frei, wenn alle Lektionen der vorherigen bestanden sind. */
-export function isStageUnlocked(stageIndex: number, progress = load()): boolean {
-  if (stageIndex <= 0) return true
-  const previous = STAGES[stageIndex - 1]
+/** Gesammelte Sterne eines Levels. */
+export function levelStars(levelIndex: number, progress = load()): number {
+  const level = LEVELS[levelIndex]
+  if (!level) return 0
+  return level.stages
+    .flatMap((s) => s.lessons)
+    .reduce((sum, id) => sum + (progress[id]?.stars ?? 0), 0)
+}
+
+/** Maximal mögliche Sterne eines Levels (3 pro Lektion). */
+export function levelMaxStars(levelIndex: number): number {
+  const level = LEVELS[levelIndex]
+  if (!level) return 0
+  return level.stages.flatMap((s) => s.lessons).length * 3
+}
+
+/**
+ * Ein Level ist frei, wenn das vorherige KOMPLETT fehlerfrei ist –
+ * also jede Lektion dort 3 Sterne hat (z. B. alle 39 in Level 1).
+ */
+export function isLevelUnlocked(levelIndex: number, progress = load()): boolean {
+  if (levelIndex <= 0) return true
+  const previous = LEVELS[levelIndex - 1]
   if (!previous) return false
   return (
-    isStageUnlocked(stageIndex - 1, progress) &&
+    isLevelUnlocked(levelIndex - 1, progress) &&
+    previous.stages
+      .flatMap((s) => s.lessons)
+      .every((id) => (progress[id]?.stars ?? 0) === 3)
+  )
+}
+
+/**
+ * Eine Stufe ist frei, wenn ihr Level frei ist und alle Lektionen der
+ * vorherigen Stufe (im selben Level) bestanden sind (mindestens 1 Stern).
+ */
+export function isStageUnlocked(levelIndex: number, stageIndex: number, progress = load()): boolean {
+  if (!isLevelUnlocked(levelIndex, progress)) return false
+  if (stageIndex <= 0) return true
+  const previous = LEVELS[levelIndex]?.stages[stageIndex - 1]
+  if (!previous) return false
+  return (
+    isStageUnlocked(levelIndex, stageIndex - 1, progress) &&
     previous.lessons.every((id) => (progress[id]?.stars ?? 0) >= 1)
   )
 }
