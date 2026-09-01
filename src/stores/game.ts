@@ -237,6 +237,9 @@ export const useGame = defineStore('game', {
           : 'Spieler Schwarz'
       chess.setHeader('Event', 'SchachTrainer Partie')
       chess.setHeader('Date', new Date().toISOString().slice(0, 10).replaceAll('-', '.'))
+      // Diagnose: eindeutiger Zeitstempel des Exports, um Dateien sicher
+      // auseinanderhalten zu können (z. B. bei Teilen-Cache-Problemen).
+      chess.setHeader('ExportedAt', new Date().toISOString().slice(0, 16).replace('T', ' '))
       chess.setHeader('White', white)
       chess.setHeader('Black', black)
       if (this.status === 'checkmate' || this.status === 'resigned') {
