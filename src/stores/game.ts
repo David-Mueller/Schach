@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { watch } from 'vue'
 import { Chess, type Square } from 'chess.js'
 import { engine } from '../engine/engine'
 import { lineToEval, type Analysis } from '../engine/types'
@@ -72,7 +73,15 @@ interface PersistedGame {
   status: GameStatus
   winner: 'white' | 'black' | null
   gameId?: string
+  /** »Ab hier weiterspielen« nach einer Lektion: Computer spielt die Gegenseite. */
+  postLessonAi?: boolean
+  postLessonColor?: 'white' | 'black'
 }
+
+const GAME_STATUSES: readonly GameStatus[] = ['playing', 'checkmate', 'stalemate', 'draw', 'resigned']
+
+/** Obergrenze für gecachte Analysen (ältere Einträge fliegen zuerst raus). */
+const ANALYSIS_CACHE_MAX = 400
 
 export const useGame = defineStore('game', {
   state: () => ({
@@ -168,6 +177,22 @@ export const useGame = defineStore('game', {
       settings.persistOnChange()
       this.restore()
       this.orientation = settings.mode === 'ai' ? settings.playerColor : 'white'
+      // Spielmodus/Farbe wirken sofort auf die laufende Partie: Wechselt man
+      // mitten in der Partie zu »Gegen Computer« und der Computer ist am Zug,
+      // muss er angestoßen werden – sonst wartet das gesperrte Brett ewig.
+      watch(
+        () => [settings.mode, settings.playerColor] as const,
+        () => {
+          if (this.lesson || this.review) return
+          if (this.effectiveMode !== 'ai' && this.thinking) {
+            this.generation++
+            engine.stop()
+            this.thinking = false
+          }
+          this.maybeEngineMove()
+          this.maybePrefetch()
+        },
+      )
       try {
         await engine.init()
         this.engineError = null
@@ -190,6 +215,8 @@ export const useGame = defineStore('game', {
           status: this.status,
           winner: this.winner,
           gameId: this.gameId,
+          postLessonAi: this.postLessonAi || undefined,
+          postLessonColor: this.postLessonAi ? this.postLessonColor : undefined,
         }
         localStorage.setItem(GAME_KEY, JSON.stringify(data))
       } catch {
@@ -202,19 +229,30 @@ export const useGame = defineStore('game', {
       try {
         const raw = localStorage.getItem(GAME_KEY)
         if (raw) {
-          const data = JSON.parse(raw) as PersistedGame
+          const data = JSON.parse(raw) as Partial<PersistedGame>
+          if (typeof data.pgn !== 'string') throw new Error('Spielstand ohne PGN')
           chess.loadPgn(data.pgn)
-          this.tipsLeft = data.tipsLeft
-          this.status = data.status
-          this.winner = data.winner
+          this.tipsLeft = typeof data.tipsLeft === 'number' ? data.tipsLeft : settings.tipBudget
+          this.status = GAME_STATUSES.includes(data.status as GameStatus)
+            ? (data.status as GameStatus)
+            : 'playing'
+          this.winner = data.winner === 'white' || data.winner === 'black' ? data.winner : null
           this.gameId = data.gameId ?? newGameId()
+          this.postLessonAi = data.postLessonAi === true
+          this.postLessonColor = data.postLessonColor === 'black' ? 'black' : 'white'
           this.sync()
           return
         }
       } catch {
         /* Defekter Spielstand: neu anfangen */
       }
+      // Kein (brauchbarer) Spielstand: sauber bei null anfangen – auch dann,
+      // wenn zuvor z. B. eine Lektion mit Matt endete (Status nicht mitschleppen).
       chess.reset()
+      this.status = 'playing'
+      this.winner = null
+      this.gameId = newGameId()
+      this.postLessonAi = false
       this.tipsLeft = settings.tipBudget
       this.sync()
     },
@@ -332,6 +370,9 @@ export const useGame = defineStore('game', {
         chess.setHeader('Result', this.winner === 'white' ? '1-0' : '0-1')
       } else if (this.status === 'stalemate' || this.status === 'draw') {
         chess.setHeader('Result', '1/2-1/2')
+      } else {
+        // Nach einem Undo aus einer beendeten Partie bliebe sonst das alte Ergebnis stehen.
+        chess.setHeader('Result', '*')
       }
       return chess.pgn()
     },
@@ -462,6 +503,7 @@ export const useGame = defineStore('game', {
     ) {
       const settings = useSettings()
       const gen = this.generation
+      const fenAfter = this.fen
       if (!settings.blunderWarning && !settings.showEval && !settings.moveFeedback) {
         then?.()
         return
@@ -469,8 +511,11 @@ export const useGame = defineStore('game', {
       try {
         // Etwas tiefer analysieren, wenn der Kommentar die Linien mitnutzt.
         const depth = settings.moveFeedback ? 12 : 10
-        const analysis = await engine.analyze(this.fen, { depth, multiPv: 1 })
+        const analysis = await engine.analyze(fenAfter, { depth, multiPv: 1 })
         if (gen !== this.generation || this.status !== 'playing') return
+        // Hotseat: Der nächste Spieler kann längst gezogen haben – dann gehört
+        // die Warnung (und der Eval) nicht mehr zur aktuellen Stellung.
+        if (this.fen !== fenAfter) return
         this.applyEval(analysis)
         if (settings.moveFeedback) {
           void this.computeFeedback(fenBefore, playedUci, analysis.lines, gen)
@@ -490,6 +535,9 @@ export const useGame = defineStore('game', {
       } catch {
         /* Eval optional – Partie geht weiter */
       }
+      // Nach einem abgebrochenen Aufruf (Undo, neue Partie …) darf kein
+      // Gegnerzug mehr für eine fremde Stellung angestoßen werden.
+      if (gen !== this.generation || this.status !== 'playing' || this.fen !== fenAfter) return
       then?.()
       if (this.effectiveMode === 'pvp') this.maybePrefetch()
     },
@@ -498,9 +546,25 @@ export const useGame = defineStore('game', {
     async ensureAnalysis(fen: string): Promise<Analysis> {
       const cached = analysisCache.get(fen)
       if (cached) return cached
-      const analysis = await engine.analyze(fen, { depth: 13, multiPv: 3 })
-      analysisCache.set(fen, analysis)
-      return analysis
+      // Läuft dieselbe Analyse schon (z. B. Prefetch), nicht doppelt rechnen –
+      // sonst wartet der Tipp hinter einer identischen zweiten Analyse.
+      const inflight = analysisInflight.get(fen)
+      if (inflight) return inflight
+      const promise = engine
+        .analyze(fen, { depth: 13, multiPv: 3 })
+        .then((analysis) => {
+          if (analysisCache.size >= ANALYSIS_CACHE_MAX) {
+            const oldest = analysisCache.keys().next().value
+            if (oldest !== undefined) analysisCache.delete(oldest)
+          }
+          analysisCache.set(fen, analysis)
+          return analysis
+        })
+        .finally(() => {
+          analysisInflight.delete(fen)
+        })
+      analysisInflight.set(fen, promise)
+      return promise
     },
 
     /**
@@ -559,6 +623,7 @@ export const useGame = defineStore('game', {
     async engineReply() {
       const settings = useSettings()
       if (this.status !== 'playing' || this.effectiveMode !== 'ai') return
+      if (this.turnColor === this.effectivePlayerColor || this.thinking) return
       const gen = this.generation
       this.thinking = true
       try {
@@ -1101,11 +1166,14 @@ export const useGame = defineStore('game', {
         this.applyEval(analysis)
         this.persist()
       } catch {
+        if (gen !== this.generation || fen !== this.fen) return
+        // Vorhandene Markierung behalten, nur den Text austauschen – ein
+        // Platzhalter-Feld würde sonst als grüner Kreis auf dem Brett landen.
         this.tip = {
-          stage: this.tipStage || 1,
-          orig: 'a1',
-          dest: 'a1',
-          san: '',
+          stage: this.tip?.stage ?? 0,
+          orig: this.tip?.orig ?? 'a1',
+          dest: this.tip?.dest ?? 'a1',
+          san: this.tip?.san ?? '',
           text: 'Der Tipp konnte gerade nicht berechnet werden – versuch es gleich noch einmal.',
         }
       } finally {
@@ -1142,6 +1210,7 @@ export const useGame = defineStore('game', {
 
 // Nicht-reaktive Modulzustände
 const analysisCache = new Map<string, Analysis>()
+const analysisInflight = new Map<string, Promise<Analysis>>()
 let pendingAfterBlunder: (() => void) | null = null
 /** true, während ein per Patt-Warnung bestätigter Zug ausgeführt wird. */
 let pattApproved = false

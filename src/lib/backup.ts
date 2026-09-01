@@ -46,14 +46,35 @@ export async function importBackupFile(file: File): Promise<void> {
   if (obj?.app !== MARKER || typeof obj.data !== 'object' || obj.data === null) {
     throw new Error('Das ist keine SchachTrainer-Backup-Datei.')
   }
-  const stale: string[] = []
+  const entries = Object.entries(obj.data as Record<string, unknown>).filter(
+    (e): e is [string, string] => e[0].startsWith('schach.') && typeof e[1] === 'string',
+  )
+  if (entries.length === 0) {
+    throw new Error('Die Backup-Datei enthält keine SchachTrainer-Daten.')
+  }
+  // Bisherigen Stand merken, damit ein Fehler beim Schreiben (z. B. voller
+  // Speicher) nicht mit halb gelöschten, halb importierten Daten endet.
+  const previous = new Map<string, string>()
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i)
-    if (key?.startsWith('schach.')) stale.push(key)
+    if (key?.startsWith('schach.')) previous.set(key, localStorage.getItem(key)!)
   }
-  for (const key of stale) localStorage.removeItem(key)
-  for (const [key, val] of Object.entries(obj.data as Record<string, unknown>)) {
-    if (key.startsWith('schach.') && typeof val === 'string') localStorage.setItem(key, val)
+  try {
+    for (const key of previous.keys()) localStorage.removeItem(key)
+    for (const [key, val] of entries) localStorage.setItem(key, val)
+  } catch {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i)
+      if (key?.startsWith('schach.')) localStorage.removeItem(key)
+    }
+    for (const [key, val] of previous) {
+      try {
+        localStorage.setItem(key, val)
+      } catch {
+        /* Wiederherstellung so weit wie möglich */
+      }
+    }
+    throw new Error('Das Backup passt nicht in den Speicher des Browsers – nichts wurde verändert.')
   }
   location.reload()
 }
