@@ -92,6 +92,8 @@ export const useGame = defineStore('game', {
     lesson: null as LessonRuntime | null,
     /** Aktueller Kommentar-/Coach-Text der Lektion. */
     lessonComment: null as string | null,
+    /** Aufgabe beim Mitspielen: Was soll der Spieler jetzt ziehen (und warum)? */
+    lessonTask: null as string | null,
     /** »Ab hier weiterspielen«: Computer übernimmt nach einer Lektion. */
     postLessonAi: false,
     postLessonColor: 'white' as 'white' | 'black',
@@ -117,6 +119,10 @@ export const useGame = defineStore('game', {
     },
     effectivePlayerColor(): 'white' | 'black' {
       return this.postLessonAi ? this.postLessonColor : useSettings().playerColor
+    },
+    /** Film-Modus wartet auf den »Weiter«-Knopf statt automatisch abzulaufen. */
+    lessonAwaitsNext(): boolean {
+      return !!this.lesson && !this.lesson.finished && this.lesson.mode === 'demo'
     },
     isPlayersTurn(): boolean {
       if (this.effectiveMode === 'pvp') return true
@@ -607,6 +613,7 @@ export const useGame = defineStore('game', {
       lessonTimer = null
       this.lesson = null
       this.lessonComment = null
+      this.lessonTask = null
       this.postLessonAi = false
     },
 
@@ -656,7 +663,7 @@ export const useGame = defineStore('game', {
       this.scheduleLessonAuto()
     },
 
-    /** Plant den nächsten automatischen Zug (Demo bzw. Gegnerzüge beim Mitspielen). */
+    /** Plant den nächsten automatischen Zug (Gegnerzüge beim Mitspielen). */
     scheduleLessonAuto() {
       const L = this.lesson
       if (!L || L.finished) return
@@ -666,13 +673,46 @@ export const useGame = defineStore('game', {
         return
       }
       const playerChar = L.playerColor === 'white' ? 'w' : 'b'
-      if (L.mode === 'play' && step.color === playerChar) return // Spieler ist dran
-      // Nach einem Kommentar mehr Lesezeit lassen.
-      const prev = L.steps[L.stepIndex - 1]
-      const delay =
-        L.stepIndex === 0 ? 2200 : L.mode === 'demo' ? (prev?.comment ? 3000 : 1400) : 1000
+      if (L.mode === 'play' && step.color === playerChar) {
+        this.lessonGuide() // Spieler ist dran: Aufgabe zeigen
+        return
+      }
+      // Film-Modus läuft nicht mehr automatisch – der »Weiter«-Knopf spielt
+      // jeden Zug einzeln ab, damit man in Ruhe lesen kann.
+      if (L.mode === 'demo') return
+      const delay = L.stepIndex === 0 ? 2200 : 1000
       if (lessonTimer) clearTimeout(lessonTimer)
       lessonTimer = setTimeout(() => this.lessonPlayStep(), delay)
+    },
+
+    /** »Weiter«-Knopf des Film-Modus: spielt genau einen Lektionszug ab. */
+    lessonNext() {
+      const L = this.lesson
+      if (!L || L.finished || L.mode !== 'demo') return
+      this.lessonPlayStep()
+    },
+
+    /**
+     * Zeigt beim Mitspielen die Aufgabe für den anstehenden Lektionszug:
+     * Die Figur wird auf dem Brett grün markiert, und die Erklärung des Zugs
+     * erscheint schon vorher – wie in der Fahrschule sagt der Coach an, was
+     * zu tun ist, gezogen wird trotzdem selbst.
+     */
+    lessonGuide() {
+      const L = this.lesson
+      if (!L || L.finished || L.mode !== 'play') return
+      const step = L.steps[L.stepIndex]
+      if (!step) return
+      this.tip = { stage: 1, orig: step.from, dest: step.to, san: step.san, text: '' }
+      this.tipStage = 1
+      if (step.comment) {
+        this.lessonTask = step.comment
+      } else {
+        const piece = chess.get(step.from)
+        this.lessonTask = piece
+          ? `Jetzt zieht ${withArticleNom(piece.type)} (grün markiert) – such das richtige Feld!`
+          : 'Du bist dran!'
+      }
     },
 
     /** Führt den aktuellen Lektionszug automatisch aus. */
@@ -694,6 +734,7 @@ export const useGame = defineStore('game', {
       L.stepIndex++
       L.attemptsOnStep = 0
       this.clearTip()
+      this.lessonTask = null
       if (step.comment) this.lessonComment = step.comment
       this.sync()
       this.moveEffects(move.captured !== undefined)
@@ -721,6 +762,7 @@ export const useGame = defineStore('game', {
         L.stepIndex++
         L.attemptsOnStep = 0
         this.clearTip()
+        this.lessonTask = null
         this.lessonComment = step.comment ?? 'Richtig!'
         this.sync()
         this.moveEffects(move.captured !== undefined)
@@ -728,19 +770,15 @@ export const useGame = defineStore('game', {
         else this.scheduleLessonAuto()
         return
       }
-      // Falscher Zug: Coach-Hinweise eskalieren, Brett zurücksetzen.
+      // Falscher Zug: Brett zurücksetzen und sofort den Pfeil zeigen – die
+      // Figur war ja schon markiert, also braucht es jetzt konkrete Hilfe.
       L.mistakes++
       L.attemptsOnStep++
       if (settings.sound) sounds.warn()
       this.sync()
-      const piece = chess.get(step.from)
-      if (L.attemptsOnStep === 1 && piece) {
-        this.lessonComment = `Fast! Probier es nochmal – in dieser Lektion zieht jetzt ${withArticleNom(piece.type)}.`
-      } else {
-        this.tip = { stage: 2, orig: step.from, dest: step.to, san: step.san, text: '' }
-        this.tipStage = 2
-        this.lessonComment = `Schau auf den Pfeil: ${sanToGerman(step.san)} ist der Lektionszug.`
-      }
+      this.tip = { stage: 2, orig: step.from, dest: step.to, san: step.san, text: '' }
+      this.tipStage = 2
+      this.lessonTask = `Fast! Schau auf den Pfeil – ${sanToGerman(step.san)} ist der Lektionszug.`
     },
 
     finishLesson() {
@@ -753,6 +791,7 @@ export const useGame = defineStore('game', {
         L.earnedStars = starsForMistakes(L.mistakes)
       }
       this.lessonComment = null
+      this.lessonTask = null
       this.clearTip()
     },
 
@@ -763,6 +802,7 @@ export const useGame = defineStore('game', {
       this.postLessonColor = L.playerColor
       this.lesson = null
       this.lessonComment = null
+      this.lessonTask = null
       this.postLessonAi = true
       this.clearTip()
       this.gameId = newGameId()

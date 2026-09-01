@@ -16,12 +16,16 @@ test.describe('Lernpfad (Fahrschule)', () => {
     await page.locator('.lesson-row .btn.primary').first().click()
     await expect(page.locator('.lesson-box')).toContainText('goldene Regel', { timeout: 10_000 })
 
-    // Falscher Zug → Text-Hinweis; nochmal falsch → Pfeil
-    await tapMove(page, [0, 2], [0, 4]) // a4 statt e4
-    await expect(page.locator('.lesson-box')).toContainText('Fast!')
-    await tapMove(page, [0, 2], [0, 3])
-    await expect(page.locator('.lesson-box')).toContainText('Pfeil')
+    // Geführtes Üben: Die Aufgabe steht sofort da, die Figur ist markiert
+    await expect(page.locator('.lesson-task')).toContainText('Königsbauer')
     expect(await page.evaluate(() => !!document.querySelector('.board .cg-shapes g *'))).toBe(true)
+
+    // Falscher Zug → sofort Pfeil + »Fast!«; zweiter Fehlversuch für die Sterne-Probe
+    await tapMove(page, [0, 2], [0, 4]) // a4 statt e4
+    await expect(page.locator('.lesson-task')).toContainText('Fast!')
+    expect(await page.evaluate(() => !!document.querySelector('.board .cg-shapes g line'))).toBe(true)
+    await tapMove(page, [0, 2], [0, 3])
+    await expect(page.locator('.lesson-task')).toContainText('Fast!')
 
     // Lektion durchspielen (weiße Züge); Gegnerzüge laufen automatisch
     const whiteMoves: [number, number][][] = [
@@ -58,6 +62,35 @@ test.describe('Lernpfad (Fahrschule)', () => {
     // Fortschritt gespeichert
     await page.click('[aria-label="Lernpfad"]')
     await expect(page.locator('.lesson-row .stars').first()).toHaveText(/★★☆/)
+
+    expect(errors).toEqual([])
+  })
+
+  test('Film-Modus: »Weiter« spielt die Züge einzeln ab, kein Autoplay', async ({ page }) => {
+    const errors = collectErrors(page)
+    await prepare(page)
+
+    // Erste Lektion als Film (🎬) starten
+    await page.click('[aria-label="Lernpfad"]')
+    await page.locator('.lesson-row .btn.small').first().click()
+    await expect(page.locator('.lesson-box')).toContainText('goldene Regel', { timeout: 10_000 })
+
+    // Kein Autoplay: Auch nach Wartezeit steht noch die Einleitung
+    await page.waitForTimeout(2600)
+    await expect(page.locator('.lesson-box')).toContainText('goldene Regel')
+
+    // »Weiter« spielt genau einen Zug samt Kommentar ab
+    const weiter = page.getByRole('button', { name: 'Weiter ▶' })
+    await weiter.click()
+    await expect(page.locator('.lesson-box')).toContainText('Königsbauer')
+
+    // Restliche 11 Züge durchklicken → Abschluss ohne Sterne (Film zählt nicht)
+    for (let i = 0; i < 11; i++) {
+      await weiter.click()
+      await page.waitForTimeout(120)
+    }
+    await expect(page.locator('.lesson-finish')).toBeVisible()
+    await expect(page.locator('.finish-stars')).toHaveCount(0)
 
     expect(errors).toEqual([])
   })

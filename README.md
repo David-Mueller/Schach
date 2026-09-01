@@ -8,9 +8,11 @@ nächsten Zug zeigen und auf Deutsch erklären, warum er gut ist.
 
 - **Lernpfad („Fahrschule“)** 🎓: 13 Lektionen in 5 Stufen — goldene Regeln,
   Eröffnungen (Italienisch, London, Damengambit, Blackmar-Diemer …), Taktik-
-  Grundmuster und Matt-Techniken. Jede Lektion als „Film“ ansehen oder
-  mitspielen (Coach prüft die Züge, Hinweise eskalieren von Text zu Pfeil),
-  1–3 Sterne je Durchlauf, Stufen schalten sich nacheinander frei, und am Ende
+  Grundmuster und Matt-Techniken. Jede Lektion als „Film“ ansehen (jeder Zug
+  wird per „Weiter“-Knopf im eigenen Tempo abgespielt) oder geführt mitspielen:
+  Der Coach markiert die Figur, erklärt den Zug vorab, und beim Fehlversuch
+  zeigt sofort ein Pfeil den Lektionszug. 1–3 Sterne je Durchlauf
+  (fehlerfrei = 3), Stufen schalten sich nacheinander frei, und am Ende
   heißt es „Ab hier weiterspielen“ gegen den Computer. Lektionen sind
   kommentierte PGNs (`src/lessons/data/`) — neue Inhalte sind reine Daten,
   jede Lektion wird im Unit-Test auf Legalität aller Züge geprüft.

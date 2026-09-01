@@ -61,7 +61,7 @@ const statusLine = computed(() => {
   if (game.engineError) return game.engineError
   if (game.lesson) {
     if (game.lesson.finished) return null
-    if (game.lesson.mode === 'demo') return '🎬 Schau zu und lies die Erklärungen!'
+    if (game.lesson.mode === 'demo') return '🎬 Lies in Ruhe – »Weiter« spielt den nächsten Zug.'
     return game.isPlayersTurn ? 'Du bist dran – spiel den Lektionszug!' : 'Der Gegner zieht …'
   }
   if (game.status !== 'playing') return null
@@ -153,6 +153,10 @@ function confirmNewGame() {
       <p>🎓 {{ game.lessonComment }}</p>
     </div>
 
+    <div v-if="game.lessonTask" class="lesson-task">
+      <p>👉 {{ game.lessonTask }}</p>
+    </div>
+
     <div v-if="game.lesson?.finished" class="lesson-finish">
       <p class="finish-title">
         Lektion geschafft!
@@ -177,6 +181,9 @@ function confirmNewGame() {
     </div>
 
     <div v-if="game.lesson" class="controls">
+      <button v-if="game.lessonAwaitsNext" class="btn primary next-btn" @click="game.lessonNext()">
+        Weiter ▶
+      </button>
       <button v-if="!game.lesson.finished" class="btn" @click="game.exitLesson()">
         ✕ Lektion beenden
       </button>
@@ -317,6 +324,21 @@ h1 {
   margin: 0;
   font-size: 14px;
   line-height: 1.5;
+}
+.lesson-task {
+  background: var(--panel);
+  border: 1px solid #7fb069;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.lesson-task p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.next-btn {
+  flex: 1;
+  font-size: 15px;
 }
 .lesson-finish {
   background: var(--panel);
