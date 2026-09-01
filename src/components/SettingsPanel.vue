@@ -118,7 +118,11 @@ function startNewGame() {
 
       <div class="actions">
         <button class="btn primary" @click="startNewGame">Neue Partie starten</button>
-        <button class="btn" :disabled="game.movesSan.length === 0" @click="downloadPgn(game.exportPgn())">
+        <button
+          class="btn"
+          :disabled="game.movesSan.length === 0 || game.blunderPrompt || game.pattPrompt"
+          @click="downloadPgn(game.exportPgn())"
+        >
           Partie als PGN exportieren
         </button>
       </div>
