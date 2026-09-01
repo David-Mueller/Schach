@@ -16,7 +16,9 @@ nächsten Zug zeigen und auf Deutsch erklären, warum er gut ist.
 - **Legale Züge werden immer angezeigt** (Punkte auf den Zielfeldern) — zentrales Lernfeature
 - Bewertungsbalken (zuschaltbar), Zugliste in deutscher Notation, geschlagene Figuren + Materialbilanz
 - Umwandlungsdialog, Schach-/Matt-Anzeige, Zug-Animationen, Sounds (WebAudio-synthetisiert), Vibration auf Mobilgeräten
-- PGN-Export (auf Mobilgeräten per Teilen-Dialog)
+- PGN-Export (auf Mobilgeräten per Teilen-Dialog, eindeutige Dateinamen mit Zeitstempel)
+- **Partie-Archiv**: die letzten 12 Partien bleiben automatisch erhalten
+  (Einstellungen → Partie-Archiv, je Partie als PGN exportierbar)
 - Partie und Einstellungen überleben ein Neuladen (localStorage)
 - **PWA**: als App auf dem Homescreen installierbar, läuft danach vollständig offline (Engine-WASM wird mitgecacht, ~7 MB)
 
@@ -55,9 +57,13 @@ Tipps und Zug-Kommentare.
 ```bash
 pnpm install       # kopiert dabei auch die Engine nach public/engine
 pnpm dev           # Dev-Server
-pnpm test          # Vitest (Erklärungsmodul)
+pnpm test          # Vitest (Erklärungs- und Bewertungsmodul)
 pnpm build         # Produktions-Build nach dist/
 pnpm preview       # Build lokal testen
+
+# End-to-End-Tests (echter Chromium, testet Engine, Tipps, Warnungen, Offline …)
+npx playwright install chromium   # einmalig, falls kein Browser vorhanden
+pnpm build && pnpm test:e2e
 ```
 
 Die Stockfish-Dateien werden per `postinstall` aus `node_modules/stockfish/bin`

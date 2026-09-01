@@ -3,6 +3,7 @@ import { Chess, type Square } from 'chess.js'
 import { engine } from '../engine/engine'
 import { lineToEval, type Analysis } from '../engine/types'
 import { explainBestMove, pieceNameDe, sanToGerman } from '../lib/explain'
+import { newGameId, upsertGame } from '../lib/archive'
 import { judgeMove, type MoveJudgement } from '../lib/judge'
 import { sounds, vibrate } from '../lib/sound'
 import { useSettings } from './settings'
@@ -29,6 +30,7 @@ interface PersistedGame {
   tipsLeft: number
   status: GameStatus
   winner: 'white' | 'black' | null
+  gameId?: string
 }
 
 export const useGame = defineStore('game', {
@@ -64,6 +66,8 @@ export const useGame = defineStore('game', {
     pattPrompt: null as { from: Square; to: Square; promotion?: 'q' | 'r' | 'b' | 'n' } | null,
 
     orientation: 'white' as 'white' | 'black',
+    /** Stabile Kennung der laufenden Partie (für das Archiv). */
+    gameId: newGameId(),
     /** Steigt bei Undo/Neustart, damit veraltete Engine-Antworten verworfen werden. */
     generation: 0,
   }),
@@ -112,6 +116,7 @@ export const useGame = defineStore('game', {
           tipsLeft: this.tipsLeft,
           status: this.status,
           winner: this.winner,
+          gameId: this.gameId,
         }
         localStorage.setItem(GAME_KEY, JSON.stringify(data))
       } catch {
@@ -129,6 +134,7 @@ export const useGame = defineStore('game', {
           this.tipsLeft = data.tipsLeft
           this.status = data.status
           this.winner = data.winner
+          this.gameId = data.gameId ?? newGameId()
           this.sync()
           return
         }
@@ -160,6 +166,7 @@ export const useGame = defineStore('game', {
       }
       this.dests = dests
 
+      const wasPlaying = this.status === 'playing'
       if (this.status === 'playing' || this.status === 'resigned') {
         if (chess.isCheckmate()) {
           this.status = 'checkmate'
@@ -172,6 +179,7 @@ export const useGame = defineStore('game', {
           this.winner = null
         }
       }
+      if (wasPlaying && this.status !== 'playing') this.archiveCurrent()
       this.persist()
     },
 
@@ -179,6 +187,9 @@ export const useGame = defineStore('game', {
 
     newGame() {
       const settings = useSettings()
+      // Angefangene Partie nicht verlieren: vor dem Reset ins Archiv.
+      if (this.status === 'playing' && this.movesSan.length >= 2) this.archiveCurrent()
+      this.gameId = newGameId()
       this.generation++
       engine.stop()
       chess.reset()
@@ -218,6 +229,7 @@ export const useGame = defineStore('game', {
       this.generation++
       engine.stop()
       this.thinking = false
+      this.archiveCurrent()
       this.persist()
     },
 
@@ -248,6 +260,30 @@ export const useGame = defineStore('game', {
         chess.setHeader('Result', '1/2-1/2')
       }
       return chess.pgn()
+    },
+
+    /** Legt die aktuelle Partie im Archiv ab (bzw. aktualisiert sie dort). */
+    archiveCurrent() {
+      if (this.movesSan.length < 2) return
+      const pgn = this.exportPgn()
+      const headers = chess.getHeaders()
+      const result =
+        this.status === 'checkmate' || this.status === 'resigned'
+          ? this.winner === 'white'
+            ? '1-0'
+            : '0-1'
+          : this.status === 'stalemate' || this.status === 'draw'
+            ? '1/2-1/2'
+            : '*'
+      upsertGame({
+        id: this.gameId,
+        date: new Date().toISOString(),
+        pgn,
+        white: headers['White'] ?? '?',
+        black: headers['Black'] ?? '?',
+        result,
+        moveCount: Math.ceil(this.movesSan.length / 2),
+      })
     },
 
     // ---------- Züge ----------

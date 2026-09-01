@@ -1,8 +1,8 @@
 /** Bietet die Partie als .pgn-Datei zum Teilen/Speichern an. */
-export async function downloadPgn(pgn: string) {
+export async function downloadPgn(pgn: string, when?: Date) {
   // Datum UND Uhrzeit im Namen: Mehrere Exporte am selben Tag dürfen sich
   // nicht überschreiben/verwechseln lassen.
-  const now = new Date()
+  const now = when ?? new Date()
   const pad = (n: number) => String(n).padStart(2, '0')
   const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`
   const filename = `schachpartie-${stamp}.pgn`

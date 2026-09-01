@@ -1,14 +1,48 @@
 <script setup lang="ts">
+import { computed, ref, watch } from 'vue'
 import { useGame } from '../stores/game'
 import { TIP_BUDGET_OPTIONS, useSettings } from '../stores/settings'
 import { LEVELS } from '../engine/engine'
 import { downloadPgn } from '../lib/pgnExport'
+import { listGames, type ArchivedGame } from '../lib/archive'
 
-defineProps<{ open: boolean }>()
+const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 
 const settings = useSettings()
 const game = useGame()
+
+// Archiv bei jedem Öffnen frisch laden
+const archive = ref<ArchivedGame[]>([])
+watch(
+  () => props.open,
+  (open) => {
+    if (open) archive.value = listGames()
+  },
+  { immediate: true },
+)
+
+const RESULT_LABEL: Record<string, string> = {
+  '1-0': 'Weiß gewinnt',
+  '0-1': 'Schwarz gewinnt',
+  '1/2-1/2': 'Unentschieden',
+  '*': 'abgebrochen',
+}
+
+function archiveDateLabel(iso: string): string {
+  const d = new Date(iso)
+  return d.toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
+const buildDate = computed(() =>
+  new Date(__BUILD_DATE__).toLocaleString('de-DE', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }),
+)
 
 function startNewGame() {
   if (game.movesSan.length > 0 && game.status === 'playing') {
@@ -126,6 +160,22 @@ function startNewGame() {
           Partie als PGN exportieren
         </button>
       </div>
+
+      <section v-if="archive.length">
+        <h3>Partie-Archiv</h3>
+        <div v-for="entry in archive" :key="entry.id" class="archive-row">
+          <div class="archive-info">
+            <span class="archive-title">{{ entry.white }} – {{ entry.black }}</span>
+            <span class="archive-meta">
+              {{ archiveDateLabel(entry.date) }} · {{ entry.moveCount }} Züge ·
+              {{ RESULT_LABEL[entry.result] ?? entry.result }}
+            </span>
+          </div>
+          <button class="btn small" @click="downloadPgn(entry.pgn, new Date(entry.date))">PGN</button>
+        </div>
+      </section>
+
+      <p class="hint version">SchachTrainer · Stand {{ buildDate }}</p>
     </div>
   </div>
 </template>
@@ -214,5 +264,42 @@ input[type='checkbox'] {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+.archive-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+}
+.archive-row:last-child {
+  border-bottom: none;
+}
+.archive-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.archive-title {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.archive-meta {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.btn.small {
+  padding: 6px 10px;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.version {
+  margin-top: 18px;
+  text-align: center;
+  font-size: 11px;
 }
 </style>

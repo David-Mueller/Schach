@@ -6,6 +6,10 @@ export default defineConfig({
   // Für GitHub Pages (Hosting unter /Schach/) setzt der Workflow BASE_PATH;
   // lokal und auf Coolify bleibt es die Site-Root.
   base: process.env.BASE_PATH ?? '/',
+  define: {
+    // Build-Zeitpunkt für die Versionsanzeige in den Einstellungen
+    __BUILD_DATE__: JSON.stringify(new Date().toISOString()),
+  },
   plugins: [
     vue(),
     VitePWA({
