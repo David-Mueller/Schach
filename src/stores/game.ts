@@ -827,6 +827,17 @@ export const useGame = defineStore('game', {
       this.maybePrefetch()
     },
 
+    /**
+     * Vor Profilwechsel/Backup-Import: Engine anhalten und laufende Antworten
+     * entwerten, damit zwischen dem Datentausch im localStorage und dem
+     * Neuladen der Seite nichts mehr in den Spielstand schreibt.
+     */
+    prepareProfileChange() {
+      this.generation++
+      engine.stop()
+      this.thinking = false
+    },
+
     // ---------- Bewertung & Tipps ----------
 
     applyEval(analysis: Analysis) {

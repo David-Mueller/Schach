@@ -5,6 +5,18 @@ import { TIP_BUDGET_OPTIONS, useSettings } from '../stores/settings'
 import { LEVELS } from '../engine/engine'
 import { downloadPgn } from '../lib/pgnExport'
 import { listGames, type ArchivedGame } from '../lib/archive'
+import {
+  activeProfile,
+  canCreate,
+  createProfile,
+  deleteProfile,
+  listProfiles,
+  normalizeName,
+  switchProfile,
+  MAX_NAME_LENGTH,
+  MAX_PROFILES,
+} from '../lib/profiles'
+import { downloadBackup, importBackupFile } from '../lib/backup'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
@@ -12,15 +24,63 @@ const emit = defineEmits<{ close: [] }>()
 const settings = useSettings()
 const game = useGame()
 
-// Archiv bei jedem Öffnen frisch laden
+// Archiv und Profilliste bei jedem Öffnen frisch laden
 const archive = ref<ArchivedGame[]>([])
+const profiles = ref<string[]>([])
+const active = ref('')
 watch(
   () => props.open,
   (open) => {
-    if (open) archive.value = listGames()
+    if (open) {
+      archive.value = listGames()
+      profiles.value = listProfiles()
+      active.value = activeProfile()
+    }
   },
   { immediate: true },
 )
+
+// ---------- Profile ----------
+const newProfileName = ref('')
+const canCreateNew = computed(() => canCreate(newProfileName.value))
+
+function onCreateProfile() {
+  const name = normalizeName(newProfileName.value)
+  if (!canCreate(name)) return
+  game.prepareProfileChange()
+  createProfile(name) // legt an, wechselt und lädt die Seite neu
+}
+
+function onSwitchProfile(name: string) {
+  game.prepareProfileChange()
+  switchProfile(name) // lädt die Seite neu
+}
+
+function onDeleteProfile(name: string) {
+  if (!confirm(`Profil „${name}“ mit allen Partien und Lernpfad-Sternen endgültig löschen?`)) return
+  deleteProfile(name)
+  profiles.value = listProfiles()
+}
+
+// ---------- Sicherung ----------
+const backupInput = ref<HTMLInputElement | null>(null)
+const importError = ref<string | null>(null)
+
+async function onImportBackup(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = '' // gleiche Datei später erneut wählbar
+  if (!file) return
+  if (!confirm('Backup einspielen? Alle Profile und Spielstände auf diesem Gerät werden ersetzt.'))
+    return
+  importError.value = null
+  game.prepareProfileChange()
+  try {
+    await importBackupFile(file) // lädt die Seite neu
+  } catch (e) {
+    importError.value = e instanceof Error ? e.message : 'Backup konnte nicht gelesen werden.'
+  }
+}
 
 const RESULT_LABEL: Record<string, string> = {
   '1-0': 'Weiß gewinnt',
@@ -60,6 +120,43 @@ function startNewGame() {
         <h2>Einstellungen</h2>
         <button class="btn subtle" aria-label="Schließen" @click="emit('close')">✕</button>
       </div>
+
+      <section>
+        <h3>Profil</h3>
+        <div v-for="name in profiles" :key="name" class="profile-row">
+          <span class="profile-name" :class="{ current: name === active }">
+            {{ name === active ? '👤' : '' }} {{ name }}
+          </span>
+          <div class="profile-actions">
+            <span v-if="name === active" class="active-tag">aktiv</span>
+            <template v-else>
+              <button class="btn small" @click="onSwitchProfile(name)">Wechseln</button>
+              <button
+                class="btn small"
+                :aria-label="`Profil ${name} löschen`"
+                @click="onDeleteProfile(name)"
+              >
+                🗑
+              </button>
+            </template>
+          </div>
+        </div>
+        <div v-if="profiles.length < MAX_PROFILES" class="profile-new">
+          <input
+            v-model="newProfileName"
+            type="text"
+            :maxlength="MAX_NAME_LENGTH"
+            placeholder="Neues Profil (z. B. Daniel)"
+            aria-label="Name für neues Profil"
+          />
+          <button class="btn small" :disabled="!canCreateNew" @click="onCreateProfile">
+            ＋ Anlegen
+          </button>
+        </div>
+        <p class="hint">
+          Jedes Profil hat eigene Einstellungen, Partien, Archiv und Lernpfad-Sterne.
+        </p>
+      </section>
 
       <section>
         <h3>Spielmodus</h3>
@@ -160,6 +257,23 @@ function startNewGame() {
           Partie als PGN exportieren
         </button>
       </div>
+
+      <section>
+        <h3>Sicherung</h3>
+        <div class="actions">
+          <button class="btn" @click="downloadBackup()">Backup exportieren (alle Profile)</button>
+          <button class="btn" @click="backupInput?.click()">Backup wiederherstellen …</button>
+          <input
+            ref="backupInput"
+            type="file"
+            accept="application/json,.json"
+            class="file-input"
+            aria-label="Backup-Datei auswählen"
+            @change="onImportBackup"
+          />
+        </div>
+        <p v-if="importError" class="hint import-error">⚠️ {{ importError }}</p>
+      </section>
 
       <section v-if="archive.length">
         <h3>Partie-Archiv</h3>
@@ -301,5 +415,56 @@ input[type='checkbox'] {
   margin-top: 18px;
   text-align: center;
   font-size: 11px;
+}
+.profile-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+}
+.profile-name {
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.profile-name.current {
+  font-weight: 700;
+}
+.profile-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.active-tag {
+  font-size: 11.5px;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  padding: 2px 9px;
+}
+.profile-new {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.profile-new input {
+  flex: 1;
+  min-width: 0;
+  background: var(--panel);
+  color: inherit;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 9px;
+  font: inherit;
+  font-size: 13px;
+}
+.file-input {
+  display: none;
+}
+.import-error {
+  color: #ee8888;
 }
 </style>

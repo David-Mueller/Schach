@@ -30,6 +30,11 @@ nächsten Zug zeigen und auf Deutsch erklären, warum er gut ist.
 - PGN-Export (auf Mobilgeräten per Teilen-Dialog, eindeutige Dateinamen mit Zeitstempel)
 - **Partie-Archiv**: die letzten 12 Partien bleiben automatisch erhalten
   (Einstellungen → Partie-Archiv, je Partie als PGN exportierbar)
+- **Profile**: mehrere Spieler auf einem Gerät (Einstellungen → Profil) — jedes
+  Profil hat eigene Einstellungen, laufende Partie, Archiv und Lernpfad-Sterne;
+  anlegen, wechseln und löschen per Namen, aktives Profil oben im Kopf sichtbar
+- **Backup**: alle Profile als JSON-Datei exportieren und wiederherstellen
+  (Einstellungen → Sicherung) — auch für den Umzug auf ein anderes Gerät
 - Partie und Einstellungen überleben ein Neuladen (localStorage)
 - **PWA**: als App auf dem Homescreen installierbar, läuft danach vollständig offline (Engine-WASM wird mitgecacht, ~7 MB)
 

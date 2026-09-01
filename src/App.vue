@@ -10,6 +10,10 @@ import SettingsPanel from './components/SettingsPanel.vue'
 import LessonPath from './components/LessonPath.vue'
 import { useGame } from './stores/game'
 import { useSettings } from './stores/settings'
+import { activeProfile } from './lib/profiles'
+
+// Profilwechsel lädt die Seite neu, daher reicht ein einmaliges Auslesen.
+const profileName = activeProfile()
 
 const game = useGame()
 const settings = useSettings()
@@ -83,8 +87,16 @@ function confirmNewGame() {
 <template>
   <div class="app">
     <header class="topbar">
-      <h1>♞ SchachTrainer</h1>
+      <h1>♞<span class="title-text"> SchachTrainer</span></h1>
       <div class="topbar-right">
+        <button
+          class="profile-chip"
+          :title="`Profil: ${profileName} – tippen zum Wechseln`"
+          aria-label="Profil wechseln"
+          @click="settingsOpen = true"
+        >
+          👤 {{ profileName }}
+        </button>
         <span v-if="!game.lesson" class="tips-badge" title="Tipps übrig">💡 {{ tipCountLabel }}</span>
         <button class="icon-btn" aria-label="Lernpfad" @click="lessonPathOpen = true">🎓</button>
         <button
@@ -236,12 +248,39 @@ function confirmNewGame() {
 }
 h1 {
   font-size: 18px;
-  margin: 0;
+  margin: 0 8px 0 0;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .topbar-right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 7px;
+  flex-shrink: 0;
+}
+.profile-chip {
+  background: var(--panel);
+  color: inherit;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  max-width: 118px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+/* Auf schmalen Handys weicht der Schriftzug dem Profilnamen – das ♞ bleibt. */
+@media (max-width: 460px) {
+  .title-text {
+    display: none;
+  }
 }
 .tips-badge {
   font-size: 14px;
