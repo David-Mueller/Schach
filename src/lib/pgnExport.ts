@@ -1,6 +1,11 @@
 /** Bietet die Partie als .pgn-Datei zum Teilen/Speichern an. */
 export async function downloadPgn(pgn: string) {
-  const filename = `schachpartie-${new Date().toISOString().slice(0, 10)}.pgn`
+  // Datum UND Uhrzeit im Namen: Mehrere Exporte am selben Tag dürfen sich
+  // nicht überschreiben/verwechseln lassen.
+  const now = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`
+  const filename = `schachpartie-${stamp}.pgn`
 
   // Auf Mobilgeräten ist Teilen (z. B. per Messenger) praktischer als Download.
   if (typeof navigator.share === 'function' && typeof File === 'function') {
