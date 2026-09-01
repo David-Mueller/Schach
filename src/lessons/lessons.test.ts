@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { Chess } from 'chess.js'
-import { LESSONS, STAGES } from './curriculum'
+import { LESSONS, LESSON_COUNT, STAGES } from './curriculum'
 import { compileLesson } from './parse'
 
 describe('Lernpfad-Inhalte', () => {
@@ -16,7 +16,9 @@ describe('Lernpfad-Inhalte', () => {
         seen.add(id)
       }
     }
-    // Jede Lektion gehört zu genau einer Stufe
+    // Jede Lektion gehört zu genau einer Stufe – und keine ID ist doppelt vergeben
+    // (eine Kollision würde die Map sonst stillschweigend verschlucken).
+    expect(LESSONS.size).toBe(LESSON_COUNT)
     expect(seen.size).toBe(LESSONS.size)
   })
 

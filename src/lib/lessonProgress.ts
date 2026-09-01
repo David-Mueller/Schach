@@ -2,6 +2,7 @@
 // Partie-Archiv: offline, gerätgebunden, robust gegen kaputte Daten.
 
 import { LEVELS } from '../lessons/curriculum'
+import { LESSON_PROGRESS_KEY as KEY } from './storageKeys'
 
 export interface LessonResult {
   /** 1–3 Sterne (3 = fehlerfrei). Es zählt immer das beste Ergebnis. */
@@ -9,12 +10,23 @@ export interface LessonResult {
   completedAt: string
 }
 
-const KEY = 'schach.lernpfad.v1'
-
 function load(): Record<string, LessonResult> {
   try {
     const raw = localStorage.getItem(KEY)
-    if (raw) return JSON.parse(raw) as Record<string, LessonResult>
+    if (raw) {
+      const parsed: unknown = JSON.parse(raw)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        // Nur plausible Einträge übernehmen (Sterne 1–3), Rest verwerfen.
+        const out: Record<string, LessonResult> = {}
+        for (const [id, v] of Object.entries(parsed as Record<string, unknown>)) {
+          const r = v as Partial<LessonResult> | null
+          if (r && typeof r.stars === 'number' && r.stars >= 1 && r.stars <= 3) {
+            out[id] = { stars: Math.floor(r.stars), completedAt: String(r.completedAt ?? '') }
+          }
+        }
+        return out
+      }
+    }
   } catch {
     /* defekten Fortschritt ignorieren */
   }

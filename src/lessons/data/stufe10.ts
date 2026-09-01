@@ -29,7 +29,7 @@ Kg8 {Der Rückzug ist die beste Chance. Nach Kg6 würde die weiße Dame den Kön
 3. Qh5 {Zutat Nummer drei: Die Dame stürmt heran und droht Matt auf h7! Läufer weg, Springer da, Dame da – das Griechische Geschenk ist komplett aufgebaut.}
 Nf6 {Die zäheste Verteidigung: Der Springer greift die Dame an und deckt gleichzeitig h7.}
 4. exf6 {Aber da war ja noch der Bauer e5! Er schlägt den Verteidiger einfach vom Brett – und die Mattdrohung auf h7 lebt wieder.}
-gxf6 {Der Fehler in höchster Not: Schwarz nimmt zurück und öffnet damit selbst den Käfig. Nur Te8 hätte dem König ein Fluchtfeld auf f8 geschaffen und das Matt noch hinausgezögert.}
+gxf6 {Der Fehler in höchster Not: Schwarz nimmt zurück und öffnet damit selbst den Käfig. Ein Turmzug wie Te8 hätte dem König ein Fluchtfeld auf f8 geschaffen und das Matt noch hinausgezögert.}
 5. Qh7# {Matt! Die Dame setzt sich auf h7, beschützt vom Springer g5. Der König findet kein Feld mehr – das Griechische Geschenk hat die ganze Partie in fünf Zügen entschieden.}`,
   },
   {

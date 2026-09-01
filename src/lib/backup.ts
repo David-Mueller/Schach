@@ -34,7 +34,10 @@ export async function downloadBackup(): Promise<void> {
  * den Dateiinhalt ersetzt, danach lädt die App neu. Wirft bei ungültigen
  * Dateien einen Fehler mit verständlicher Meldung.
  */
-export async function importBackupFile(file: File): Promise<void> {
+export type BackupEntries = readonly (readonly [string, string])[]
+
+/** Liest und prüft eine Backup-Datei, ohne etwas zu verändern. */
+export async function readBackupFile(file: File): Promise<BackupEntries> {
   const text = await file.text()
   let parsed: unknown
   try {
@@ -52,6 +55,15 @@ export async function importBackupFile(file: File): Promise<void> {
   if (entries.length === 0) {
     throw new Error('Die Backup-Datei enthält keine SchachTrainer-Daten.')
   }
+  return entries
+}
+
+export async function importBackupFile(file: File): Promise<void> {
+  applyBackup(await readBackupFile(file))
+}
+
+/** Ersetzt alle schach.*-Schlüssel durch die geprüften Einträge und lädt neu. */
+export function applyBackup(entries: BackupEntries): void {
   // Bisherigen Stand merken, damit ein Fehler beim Schreiben (z. B. voller
   // Speicher) nicht mit halb gelöschten, halb importierten Daten endet.
   const previous = new Map<string, string>()

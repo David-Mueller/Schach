@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { watch } from 'vue'
+import { SETTINGS_KEY as STORAGE_KEY } from '../lib/storageKeys'
 
 export type Mode = 'pvp' | 'ai'
 export type BoardStyle = '2d' | '3d'
@@ -25,8 +26,6 @@ export interface SettingsState {
   boardStyle: BoardStyle
 }
 
-const STORAGE_KEY = 'schach.settings.v1'
-
 const defaults: SettingsState = {
   mode: 'ai',
   aiLevel: 1,
@@ -42,10 +41,37 @@ const defaults: SettingsState = {
   boardStyle: '3d',
 }
 
+/** Nur bekannte Werte übernehmen – ein manipuliertes Backup darf das Brett nicht lahmlegen. */
+function sanitize(raw: Partial<Record<keyof SettingsState, unknown>>): SettingsState {
+  const s: SettingsState = { ...defaults }
+  if (raw.mode === 'pvp' || raw.mode === 'ai') s.mode = raw.mode
+  if (typeof raw.aiLevel === 'number' && Number.isInteger(raw.aiLevel) && raw.aiLevel >= 0 && raw.aiLevel <= 5)
+    s.aiLevel = raw.aiLevel
+  if (raw.playerColor === 'white' || raw.playerColor === 'black') s.playerColor = raw.playerColor
+  if (typeof raw.tipBudget === 'number' && Number.isInteger(raw.tipBudget) && raw.tipBudget >= -1)
+    s.tipBudget = raw.tipBudget
+  if (raw.boardStyle === '2d' || raw.boardStyle === '3d') s.boardStyle = raw.boardStyle
+  for (const key of [
+    'autoFlip',
+    'showEval',
+    'blunderWarning',
+    'pattWarning',
+    'moveFeedback',
+    'sound',
+    'haptics',
+  ] as const) {
+    if (typeof raw[key] === 'boolean') s[key] = raw[key]
+  }
+  return s
+}
+
 function load(): SettingsState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) return { ...defaults, ...(JSON.parse(raw) as Partial<SettingsState>) }
+    if (raw) {
+      const parsed: unknown = JSON.parse(raw)
+      if (parsed && typeof parsed === 'object') return sanitize(parsed as Record<string, unknown>)
+    }
   } catch {
     /* defekte/fehlende Daten ignorieren */
   }

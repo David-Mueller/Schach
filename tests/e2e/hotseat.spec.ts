@@ -69,7 +69,7 @@ test.describe('Hotseat-Modus („Zu zweit")', () => {
       .map(Number)
       .sort((a, b) => a - b)
     expect(rows.length).toBeGreaterThan(1)
-    const topRow = rows[0]
+    const topRow = rows[0]!
     const maxZ = Math.max(...Object.values(zByRow!))
     expect(zByRow![topRow]).toBe(maxZ)
 

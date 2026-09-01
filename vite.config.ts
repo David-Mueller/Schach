@@ -13,7 +13,9 @@ export default defineConfig({
   plugins: [
     vue(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // 'prompt': kein Zwangs-Reload mitten in Lektion oder Partie – die App
+      // wendet Updates an, wenn gerade nichts verloren gehen kann (siehe App.vue).
+      registerType: 'prompt',
       includeAssets: ['icons/icon.svg'],
       manifest: {
         name: 'SchachTrainer',

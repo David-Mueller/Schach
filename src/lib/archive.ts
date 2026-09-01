@@ -13,13 +13,32 @@ export interface ArchivedGame {
   moveCount: number
 }
 
-const KEY = 'schach.archive.v1'
+import { ARCHIVE_KEY as KEY } from './storageKeys'
+
 const MAX_GAMES = 12
+
+function isArchivedGame(v: unknown): v is ArchivedGame {
+  if (!v || typeof v !== 'object') return false
+  const g = v as Record<string, unknown>
+  return (
+    typeof g.id === 'string' &&
+    typeof g.date === 'string' &&
+    typeof g.pgn === 'string' &&
+    typeof g.white === 'string' &&
+    typeof g.black === 'string' &&
+    typeof g.result === 'string' &&
+    typeof g.moveCount === 'number'
+  )
+}
 
 export function listGames(): ArchivedGame[] {
   try {
     const raw = localStorage.getItem(KEY)
-    if (raw) return JSON.parse(raw) as ArchivedGame[]
+    if (raw) {
+      const parsed: unknown = JSON.parse(raw)
+      // Nur wohlgeformte Einträge – ein kaputtes Backup darf die Liste nicht crashen.
+      if (Array.isArray(parsed)) return parsed.filter(isArchivedGame)
+    }
   } catch {
     /* defektes Archiv ignorieren */
   }

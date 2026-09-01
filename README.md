@@ -54,7 +54,9 @@ nächsten Zug zeigen und auf Deutsch erklären, warum er gut ist.
 - **Backup**: alle Profile als JSON-Datei exportieren und wiederherstellen
   (Einstellungen → Sicherung) — auch für den Umzug auf ein anderes Gerät
 - Partie und Einstellungen überleben ein Neuladen (localStorage)
-- **PWA**: als App auf dem Homescreen installierbar, läuft danach vollständig offline (Engine-WASM wird mitgecacht, ~7 MB)
+- **PWA**: als App auf dem Homescreen installierbar, läuft danach vollständig offline
+  (Engine-WASM wird mitgecacht, ~7 MB). Neue Versionen werden erst geladen, wenn
+  gerade keine Partie, Lektion oder Analyse läuft – oder per Knopf im Hinweis.
 
 ## Stack
 
@@ -92,6 +94,7 @@ Tipps und Zug-Kommentare.
 pnpm install       # kopiert dabei auch die Engine nach public/engine
 pnpm dev           # Dev-Server
 pnpm test          # Vitest (Erklärungs-/Bewertungsmodul, Lektions-Validierung, Freischalt-Logik)
+pnpm typecheck     # tsc für App-Code (strict) und E2E-Tests
 pnpm build         # Produktions-Build nach dist/
 pnpm preview       # Build lokal testen
 
@@ -101,7 +104,9 @@ pnpm build && pnpm test:e2e
 ```
 
 Die Stockfish-Dateien werden per `postinstall` aus `node_modules/stockfish/bin`
-nach `public/engine/` kopiert (nicht eingecheckt).
+nach `public/engine/` kopiert (nicht eingecheckt). Das Paket ist exakt gepinnt,
+weil die Dateinamen (`stockfish-18-lite-single.*`) im Kopierskript und in
+`src/engine/engine.ts` stehen.
 
 ## Deployment
 

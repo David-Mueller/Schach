@@ -22,7 +22,7 @@ export const stufe6Lessons: Lesson[] = [
 3. d4 {Weiß will das volle Zentrum. Aber Vorsicht, jetzt kommt der sizilianische Trick.}
 cxd4 {Du tauschst deinen Flügelbauern gegen einen wertvollen weißen Zentrumsbauern – ein gutes Geschäft! Weiß hat jetzt einen Zentrumsbauern weniger.}
 4. Nxd4 Nf6 {Der Springer entwickelt sich und greift sofort e4 an – Weiß muss reagieren.}
-5. Nc3 g6 {Der Startschuss zum Fianchetto: Der Läufer soll aufs Eckfeld g7. Von dort schaut er über die ganze lange Diagonale bis nach b2.}
+5. Nc3 g6 {Der Startschuss zum Fianchetto: Der Läufer soll aufs Eckfeld g7. Von dort schaut er über die lange Diagonale – sobald der Springer f6 Platz macht, bis nach b2.}
 6. Be2 Bg7 {Da steht er! Ein Läufer auf g7 ist Angreifer und Bodyguard zugleich – er beschützt später deinen rochierten König.}
 7. O-O O-O {Rochade – dein König sitzt sicher hinter den Bauern f7, g6, h7 und dem Läufer g7. Diese Aufstellung heißt Drachenaufbau.}
 8. Be3 Nc6 {Fertig entwickelt! Beide Seiten haben Chancen: Weiß mehr Platz, du eine bombensichere Stellung und die halboffene c-Linie für deine Türme.}`,
@@ -72,10 +72,10 @@ Bg6 {Der Läufer weicht gemütlich aus – auf g6 steht er sicher hinter seinen 
 c5 {Der Schlüsselzug! Merk dir: Eine Bauernkette greift man am Fuß an. Der Fuß der weißen Kette ist d4 – und genau den attackiert dein c-Bauer.}
 4. c3 {Weiß eilt zur Hilfe und stützt d4 mit einem weiteren Bauern.}
 Nc6 {Der zweite Angreifer auf d4. Zählen lernen ist im Schach Gold wert: Angreifer gegen Verteidiger!}
-5. Nf3 Qb6 {Die Dame darf hier ausnahmsweise früh raus – sie hat einen klaren Job: Von b6 drückt sie schräg auf d4 und nebenbei auf b2.}
+5. Nf3 Qb6 {Die Dame darf hier ausnahmsweise früh raus – sie hat einen klaren Job: Von b6 drückt sie auf b2 – und sobald der Bauer c5 auf d4 schlägt, auch schräg auf d4.}
 6. Be2 cxd4
 7. cxd4 Nge7 {Ein schlauer Umweg: Der Springer will nicht nach f6, sondern über e7 nach f5 – dort greift er d4 noch einmal an.}
-8. O-O Nf5 {Angekommen! Zähl die Angreifer auf d4: Dame b6, Springer c6, Springer f5 – drei gegen einen Verteidiger. Der Fuß der weißen Kette wackelt gewaltig.}`,
+8. O-O Nf5 {Angekommen! Zähl die Angreifer auf d4: Dame b6, Springer c6, Springer f5 – drei gegen zwei Verteidiger (Springer f3 und Dame d1). Der Fuß der weißen Kette wackelt gewaltig.}`,
   },
   {
     id: 'schwarz-italienisch',

@@ -41,7 +41,11 @@ function evalFor(line: EngineLine, sideToMove: Side, mover: Side): number {
 }
 
 /** "Besser war ⟨SAN deutsch⟩." plus prägnante Begründung (ohne generischen Fallback-Satz). */
-function betterMoveSentence(fenBefore: string, linesBefore: EngineLine[]): string {
+function betterMoveSentence(
+  fenBefore: string,
+  linesBefore: EngineLine[],
+  withReason = true,
+): string {
   const best = linesBefore[0]
   if (!best) return ''
   let sanDe = best.move
@@ -52,6 +56,7 @@ function betterMoveSentence(fenBefore: string, linesBefore: EngineLine[]): strin
     // UCI roh anzeigen
   }
   const parts = [`Besser war ${sanDe}.`]
+  if (!withReason) return parts[0]!
   const reason = explainBestMove(fenBefore, linesBefore)
     .split(GENERIC_EXPLANATION)
     .join('')
@@ -168,10 +173,40 @@ export function judgeMove(
       (stillWinning
         ? 'Du stehst zwar immer noch besser, aber das Matt war zum Greifen nah.'
         : 'Jetzt ist dein Vorteil weg.')
+    // Die Begründung des besseren Zugs wäre hier nur »damit setzt du Matt« – doppelt.
+    const betterShort = betterMoveSentence(fenBefore, linesBefore, false)
     return {
       verdict: stillWinning ? 'mistake' : 'blunder',
       title: stillWinning ? 'Fehler' : 'Grober Fehler',
-      text: `${missed} ${better} ${tail}`.trim(),
+      text: `${missed} ${betterShort} ${tail}`.trim(),
+    }
+  }
+
+  // Sonderfall 3b: Die Stellung war schon verloren (Gegner hat forciertes Matt).
+  // Dann ist nicht jeder Zug ein »Grober Fehler« – es zählt, wie lange man durchhält.
+  if (bestBefore.mate !== undefined && bestBefore.mate < 0) {
+    const bestDistance = -bestBefore.mate
+    const afterDistance = afterLine.mate !== undefined && afterLine.mate > 0 ? afterLine.mate : Infinity
+    if (afterDistance >= bestDistance) {
+      return {
+        verdict: 'good',
+        title: 'Guter Zug',
+        text: 'Die Stellung ist leider schon verloren – aber dieser Zug hält am längsten durch.',
+      }
+    }
+    if (afterDistance >= bestDistance - 2) {
+      return {
+        verdict: 'okay',
+        title: 'Okay',
+        text: `Die Stellung ist leider schon verloren. ${better} hätte noch etwas länger durchgehalten.`
+          .replace('. hätte', ' hätte')
+          .trim(),
+      }
+    }
+    return {
+      verdict: 'mistake',
+      title: 'Fehler',
+      text: `Die Stellung war schon verloren, aber so geht es schneller: ${concreteThreat(fenAfter, afterLine) ?? ''} ${betterMoveSentence(fenBefore, linesBefore, false)}`.trim(),
     }
   }
 

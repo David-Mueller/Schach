@@ -12,11 +12,11 @@ import { recordResult, starsForMistakes } from '../lib/lessonProgress'
 import { judgeMove, type MoveJudgement } from '../lib/judge'
 import { sounds, vibrate } from '../lib/sound'
 import { useSettings } from './settings'
+import { GAME_KEY } from '../lib/storageKeys'
 
 // Die Chess-Instanz bleibt bewusst außerhalb des reaktiven Stores.
 const chess = new Chess()
 
-const GAME_KEY = 'schach.game.v1'
 /** Eval-Verlust in Centipawns, ab dem die Fehlerwarnung anspringt. */
 const BLUNDER_THRESHOLD = 200
 
@@ -65,6 +65,8 @@ export interface ReviewState {
   /** Bester Engine-Zug (UCI) in der Stellung vor Halbzug i. */
   best: (string | null)[]
   busy: boolean
+  /** Anzahl laufender Bewertungen (busy = pending > 0). */
+  pending: number
 }
 
 interface PersistedGame {
@@ -189,7 +191,9 @@ export const useGame = defineStore('game', {
             engine.stop()
             this.thinking = false
           }
+          this.orientation = settings.mode === 'ai' ? settings.playerColor : 'white'
           this.maybeEngineMove()
+          void this.refreshEval()
           this.maybePrefetch()
         },
       )
@@ -311,6 +315,7 @@ export const useGame = defineStore('game', {
       this.thinking = false
       this.analyzing = false
       this.blunderPrompt = false
+      pendingAfterBlunder = null
       this.pendingPromotion = null
       this.pattPrompt = null
       this.clearTip()
@@ -341,6 +346,13 @@ export const useGame = defineStore('game', {
       this.generation++
       engine.stop()
       this.thinking = false
+      // Offene Rückfragen schließen – ein »Zurücknehmen« nach dem Aufgeben
+      // würde die Aufgabe sonst stillschweigend wieder aufheben.
+      this.blunderPrompt = false
+      pendingAfterBlunder = null
+      this.pattPrompt = null
+      this.pendingPromotion = null
+      this.clearTip()
       this.archiveCurrent()
       this.persist()
     },
@@ -360,7 +372,7 @@ export const useGame = defineStore('game', {
           ? `Computer (Stufe ${settings.aiLevel})`
           : 'Spieler Schwarz'
       chess.setHeader('Event', 'SchachTrainer Partie')
-      chess.setHeader('Date', new Date().toISOString().slice(0, 10).replaceAll('-', '.'))
+      chess.setHeader('Date', localDateStamp())
       // Diagnose: eindeutiger Zeitstempel des Exports, um Dateien sicher
       // auseinanderhalten zu können (z. B. bei Teilen-Cache-Problemen).
       chess.setHeader('ExportedAt', new Date().toISOString().slice(0, 16).replace('T', ' '))
@@ -518,7 +530,7 @@ export const useGame = defineStore('game', {
         if (this.fen !== fenAfter) return
         this.applyEval(analysis)
         if (settings.moveFeedback) {
-          void this.computeFeedback(fenBefore, playedUci, analysis.lines, gen)
+          void this.computeFeedback(fenBefore, playedUci, analysis.lines, gen, fenAfter)
         }
         const line = analysis.lines[0]
         if (settings.blunderWarning && line && prevEvalWhite !== null) {
@@ -583,10 +595,11 @@ export const useGame = defineStore('game', {
       playedUci: string,
       linesAfter: Analysis['lines'],
       gen: number,
+      fenAfter: string,
     ) {
       try {
         const before = await this.ensureAnalysis(fenBefore)
-        if (gen !== this.generation) return
+        if (gen !== this.generation || this.fen !== fenAfter) return
         this.feedback = judgeMove(fenBefore, playedUci, before.lines, linesAfter)
       } catch {
         /* Kommentar optional */
@@ -629,6 +642,7 @@ export const useGame = defineStore('game', {
       try {
         const uci = await engine.bestMoveForLevel(this.fen, settings.aiLevel)
         if (gen !== this.generation || this.status !== 'playing') return
+        if (this.effectiveMode !== 'ai' || this.turnColor === this.effectivePlayerColor) return
         if (uci && uci !== '(none)') {
           const move = chess.move({
             from: uci.slice(0, 2) as Square,
@@ -718,6 +732,7 @@ export const useGame = defineStore('game', {
       try {
         compiled = compileLesson(lesson)
       } catch {
+        this.engineError = 'Diese Lektion konnte nicht geladen werden.'
         return
       }
       this.review = null
@@ -747,6 +762,7 @@ export const useGame = defineStore('game', {
       this.thinking = false
       this.analyzing = false
       this.blunderPrompt = false
+      pendingAfterBlunder = null
       this.pattPrompt = null
       this.pendingPromotion = null
       this.clearTip()
@@ -933,9 +949,6 @@ export const useGame = defineStore('game', {
      * Rückblick überlagert nur die Anzeige.
      */
     startReview(pgn?: string) {
-      // Eine laufende Lektion erst sauber beenden (stellt die echte Partie
-      // wieder her); der Engine-Anstoß daraus wird gleich wieder entwertet.
-      if (this.lesson) this.exitLesson()
       const c = new Chess()
       try {
         c.loadPgn(pgn ?? chess.pgn())
@@ -944,11 +957,15 @@ export const useGame = defineStore('game', {
       }
       const hist = c.history({ verbose: true })
       if (hist.length === 0) return
+      // Eine laufende Lektion erst sauber beenden (stellt die echte Partie
+      // wieder her); der Engine-Anstoß daraus wird gleich wieder entwertet.
+      if (this.lesson) this.exitLesson()
       this.generation++
       engine.stop()
       this.thinking = false
       this.analyzing = false
       this.blunderPrompt = false
+      pendingAfterBlunder = null
       this.pattPrompt = null
       this.pendingPromotion = null
       this.review = {
@@ -963,6 +980,7 @@ export const useGame = defineStore('game', {
         judgements: hist.map(() => null),
         best: hist.map(() => null),
         busy: false,
+        pending: 0,
       }
       this.showReviewPosition()
     },
@@ -1046,6 +1064,7 @@ export const useGame = defineStore('game', {
       if (!R || index < 1) return
       if (R.judgements[index - 1]) return // schon bewertet (applyReviewFeedback lief)
       const gen = this.generation
+      R.pending++
       R.busy = true
       try {
         const fenBefore = R.fens[index - 1]!
@@ -1072,7 +1091,8 @@ export const useGame = defineStore('game', {
       } catch {
         /* Bewertung optional – Blättern geht trotzdem */
       } finally {
-        if (this.review === R) R.busy = false
+        R.pending = Math.max(0, R.pending - 1)
+        if (this.review === R) R.busy = R.pending > 0
       }
     },
 
@@ -1133,6 +1153,7 @@ export const useGame = defineStore('game', {
     async requestTip() {
       if (this.lesson) return // der Coach der Lektion übernimmt die Hinweise
       if (this.status !== 'playing' || !this.isPlayersTurn || this.analyzing) return
+      if (this.blunderPrompt || this.pattPrompt || this.pendingPromotion) return
       if (this.tipStage >= 3) return
       if (this.tipsLeft === 0) return
 
@@ -1187,8 +1208,12 @@ export const useGame = defineStore('game', {
       const settings = useSettings()
       const ended = this.status !== 'playing'
       if (settings.sound) {
-        if (ended && this.status === 'checkmate') sounds.win()
-        else if (this.inCheck) sounds.check()
+        if (ended && this.status === 'checkmate') {
+          // Gegen den Computer nur jubeln, wenn der Mensch gewonnen hat.
+          const lost = this.effectiveMode === 'ai' && this.winner !== this.effectivePlayerColor
+          if (lost) sounds.lose()
+          else sounds.win()
+        } else if (this.inCheck) sounds.check()
         else if (captured) sounds.capture()
         else sounds.move()
       }
@@ -1199,10 +1224,7 @@ export const useGame = defineStore('game', {
     },
 
     onGameEnd() {
-      const settings = useSettings()
-      if (settings.sound && this.status === 'checkmate') {
-        // Siegsound kam schon über feedback(); hier nichts weiter.
-      }
+      // Sounds laufen bereits über moveEffects(); hier nur sichern.
       this.persist()
     },
   },
@@ -1216,6 +1238,13 @@ let pendingAfterBlunder: (() => void) | null = null
 let pattApproved = false
 /** Timer für automatische Lektionszüge (Demo/Gegner). */
 let lessonTimer: ReturnType<typeof setTimeout> | null = null
+
+/** PGN-Datum in Ortszeit (toISOString wäre UTC – nach Mitternacht der Vortag). */
+function localDateStamp(): string {
+  const d = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())}`
+}
 
 function uciToSan(fen: string, uci: string): string {
   try {

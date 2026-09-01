@@ -235,3 +235,43 @@ describe('explainBestMove', () => {
     expect(explainBestMove(fen, [{ move: 'zz99', cp: 0, pv: ['zz99'] }])).toMatch(/[.!]$/)
   })
 })
+
+describe('explainBestMove – Randfälle der Regeln', () => {
+  it('nennt keine Gabel, wenn die gabelnde Figur selbst einsteht', () => {
+    // Dd4 »gabelt« a7 und g7 – wird aber vom Springer b3 umsonst geschlagen.
+    const fen = '4k3/p5p1/8/8/8/1n6/8/3QK3 w - - 0 1'
+    const post = new Chess(fen)
+    applyUci(post, 'd1d4')
+    expect(post.attackers('d4', 'b')).toContain('b3')
+    const text = explainBestMove(fen, [{ move: 'd1d4', cp: 50, pv: ['d1d4'] }])
+    expect(text).not.toMatch(/Gabel/)
+  })
+
+  it('benutzt bei der Damen-Gabel den richtigen Artikel', () => {
+    // Dd4 greift die ungedeckten Springer b6 und f6 gleichzeitig an.
+    const fen = '4k3/8/1n3n2/8/8/8/6PP/3Q2K1 w - - 0 1'
+    const post = new Chess(fen)
+    applyUci(post, 'd1d4')
+    expect(post.attackers('b6', 'w')).toContain('d4')
+    expect(post.attackers('f6', 'w')).toContain('d4')
+    expect(post.attackers('d4', 'b')).toEqual([])
+    const text = explainBestMove(fen, [{ move: 'd1d4', cp: 300, pv: ['d1d4'] }])
+    expect(text).toMatch(/Gabel/)
+    expect(text).toMatch(/Deine Dame/)
+    expect(text).toMatch(/zwei Springer/)
+  })
+
+  it('nennt beim En-passant-Schlag das Feld des geschlagenen Bauern', () => {
+    const fen = '4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1'
+    const text = explainBestMove(fen, [{ move: 'e5d6', cp: 100, pv: ['e5d6'] }])
+    expect(text).toMatch(/Bauer auf d5/)
+    expect(text).not.toMatch(/auf d6/)
+  })
+
+  it('zählt einen Horizont-»Gewinn« nicht, wenn die Figur sofort zurückgeschlagen wird', () => {
+    // Txd8 schlägt die Dame, aber Kxd8 nimmt zurück – die pv endet zu früh.
+    const fen = '3qk3/8/8/8/8/8/8/3RK3 w - - 0 1'
+    const text = explainBestMove(fen, [{ move: 'd1d8', cp: 0, pv: ['d1d8'] }])
+    expect(text).not.toMatch(/gewinnst du eine Dame/)
+  })
+})

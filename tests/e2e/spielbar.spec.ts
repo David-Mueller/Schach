@@ -85,8 +85,12 @@ test.describe('Grundfunktionen gegen den Computer', () => {
     expect(errors).toEqual([])
   })
 
-  test('PWA-Manifest wird ausgeliefert (200)', async ({ page }) => {
+  test('PWA-Manifest wird ausgeliefert und ist vollständig', async ({ page }) => {
     const res = await page.request.get(`${BASE_URL}/manifest.webmanifest`)
     expect(res.status()).toBe(200)
+    const manifest = (await res.json()) as { name?: string; icons?: unknown[]; display?: string }
+    expect(manifest.name).toBe('SchachTrainer')
+    expect(manifest.display).toBe('standalone')
+    expect(manifest.icons?.length ?? 0).toBeGreaterThanOrEqual(3)
   })
 })

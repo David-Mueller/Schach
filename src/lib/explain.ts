@@ -126,6 +126,7 @@ export function simulatePvMaterial(fen: string, pv: string[], maxPlies = 6): PvM
   const mover = chess.turn()
   let gain = 0
   let biggest: string | undefined
+  let lastMove: Move | undefined
   for (const uci of pv.slice(0, maxPlies)) {
     const side = chess.turn()
     let mv: Move
@@ -144,6 +145,18 @@ export function simulatePvMaterial(fen: string, pv: string[], maxPlies = 6): PvM
         gain -= valueOf(mv.captured)
       }
     }
+    // Umwandlung zählt als Materialgewinn (Bauer wird zur Figur).
+    if (mv.promotion) {
+      const delta = valueOf(mv.promotion) - valueOf('p')
+      gain += side === mover ? delta : -delta
+    }
+    lastMove = mv
+  }
+  // Endet die Variante mit einem eigenen Zug auf ein angegriffenes Feld, ist der
+  // »Gewinn« nur der Horizont der Engine – die Figur wird gleich zurückgeschlagen.
+  if (lastMove && lastMove.color === mover && isHanging(chess, lastMove.to)) {
+    const piece = chess.get(lastMove.to)
+    if (piece) gain -= valueOf(piece.type)
   }
   const result: PvMaterial = { gain }
   if (biggest !== undefined) result.biggestCapture = biggest
@@ -194,6 +207,8 @@ function findForkTargets(post: Chess, move: Move, mover: Color, enemy: Color): s
   const movedSquare = move.to as Square
   const moved = post.get(movedSquare)
   if (!moved) return []
+  // Eine Figur, die selbst einsteht, gabelt nichts – sie wird einfach geschlagen.
+  if (isHanging(post, movedSquare)) return []
   const movedValue = valueOf(moved.type)
   const targets: string[] = []
   for (const row of post.board()) {
@@ -202,12 +217,32 @@ function findForkTargets(post: Chess, move: Move, mover: Color, enemy: Color): s
       const attackedByMoved = post.attackers(cell.square, mover).includes(movedSquare)
       if (!attackedByMoved) continue
       const undefended = post.attackers(cell.square, enemy).length === 0
-      if (valueOf(cell.type) > movedValue || undefended) {
-        targets.push(pieceNameDe(cell.type))
+      // Ungedeckte Bauern zählen nicht: zwei angegriffene Bauern sind keine Gabel.
+      if (valueOf(cell.type) > movedValue || (undefended && valueOf(cell.type) >= 3)) {
+        targets.push(cell.type)
       }
     }
   }
   return targets
+}
+
+const PLURAL_DE: Record<string, string> = {
+  p: 'Bauern',
+  n: 'Springer',
+  b: 'Läufer',
+  r: 'Türme',
+  q: 'Damen',
+  k: 'Könige',
+}
+const NUMBER_DE = ['', '', 'zwei', 'drei', 'vier', 'fünf', 'sechs', 'sieben', 'acht']
+
+/** Figurentypen gruppiert benennen: ['r','r','q'] → "zwei Türme und Dame". */
+function nameTargets(types: string[]): string[] {
+  const counts = new Map<string, number>()
+  for (const t of types) counts.set(t, (counts.get(t) ?? 0) + 1)
+  return [...counts.entries()].map(([t, n]) =>
+    n === 1 ? pieceNameDe(t) : `${NUMBER_DE[n] ?? n} ${PLURAL_DE[t] ?? 'Figuren'}`,
+  )
 }
 
 /** Erste zutreffende Erkennungsregel (siehe Prioritätsliste). */
@@ -240,15 +275,20 @@ function describeMainReason(
     return `Aufgepasst: Nur ${sanDe} rettet dich vor dem Matt – alle anderen Züge verlieren!`
   }
 
-  // 3. Materialgewinn (pv-Simulation)
-  const gain = materialGainFromPv(fen, best.pv)
+  // 3. Materialgewinn (pv-Simulation) – die eigene Umwandlung erklärt Regel 7.
+  let gain = materialGainFromPv(fen, best.pv)
+  if (move.promotion) gain -= valueOf(move.promotion) - valueOf('p')
   if (gain >= 1) {
     const captured = move.captured ? pieceDe(move.captured) : undefined
+    // Beim En-passant steht der geschlagene Bauer nicht auf dem Zielfeld.
+    const capturedSquare = (
+      move.flags.includes('e') ? `${move.to[0]}${move.from[1]}` : move.to
+    ) as Square
     const capturedUndefended =
-      captured !== undefined && pre.attackers(move.to as Square, enemy).length === 0
+      captured !== undefined && pre.attackers(capturedSquare, enemy).length === 0
     if (captured && capturedUndefended) {
       const article = captured.article === 'die' ? 'Die' : 'Der'
-      return `${article} ${captured.name} auf ${move.to} ist ungedeckt – du kannst ${captured.pronoun} einfach schlagen!`
+      return `${article} ${captured.name} auf ${capturedSquare} ist ungedeckt – du kannst ${captured.pronoun} einfach schlagen!`
     }
     return `Damit gewinnst du ${gainPhrase(gain, move)}.`
   }
@@ -257,8 +297,10 @@ function describeMainReason(
   const forkTargets = findForkTargets(post, move, mover, enemy)
   if (forkTargets.length >= 2) {
     const moved = post.get(move.to as Square)
-    const movedName = moved ? pieceNameDe(moved.type) : 'Figur'
-    return `Eine Gabel! Dein ${movedName} greift gleichzeitig ${listDe(forkTargets)} an – mindestens eine dieser Figuren gewinnst du.`
+    const movedDe = moved ? pieceDe(moved.type) : undefined
+    const dein = movedDe?.article === 'die' ? 'Deine' : 'Dein'
+    const movedName = movedDe?.name ?? 'Figur'
+    return `Eine Gabel! ${dein} ${movedName} greift gleichzeitig ${listDe(nameTargets(forkTargets))} an – mindestens eine dieser Figuren gewinnst du.`
   }
 
   // 5. Angegriffene eigene Figur retten

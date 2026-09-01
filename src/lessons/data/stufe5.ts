@@ -24,15 +24,15 @@ dxe4 {Schwarz nimmt das Geschenk an.}
 Nf6 {Schwarz hält den Extra-Bauern mit dem Springer fest.}
 4. f3 {Die Kernidee des Gambits: Weiß bietet sogar noch einen Tausch an, um die f-Linie zu öffnen. Auf dieser Linie liegt f7 – das schwächste Feld bei Schwarz.}
 exf3
-5. Nxf3 {Bilanz: Weiß hat einen Bauern weniger, aber zwei Figuren entwickelt und die halboffene f-Linie. Der Turm wird nach der Rochade direkt auf f7 zielen.}
+5. Nxf3 {Bilanz: Weiß hat einen Bauern weniger, aber zwei Figuren entwickelt und die halboffene f-Linie. Nach der Rochade steht der Turm auf dieser Linie – sobald der Springer f3 weiterzieht, zielt er direkt auf f7.}
 e6
 6. Bd3 {Der Läufer stellt sich auf die Angriffsdiagonale – er schaut genau auf h7, direkt neben dem künftigen Rochadefeld des schwarzen Königs.}
 Be7
-7. O-O {Rochade – und schau auf den Turm: Er steht sofort auf der offenen f-Linie und drückt auf f7. Das ist der Lohn für den geopferten Bauern.}
+7. O-O {Rochade – und schau auf den Turm: Er steht sofort auf der halboffenen f-Linie, nur noch der eigene Springer f3 steht vor f7. Das ist der Lohn für den geopferten Bauern.}
 O-O
-8. Qe1 {Ein typisches Angriffsmanöver: Die Dame räumt die e-Linie und will über e1 nach h4 schwenken – direkt vor den schwarzen König.}
+8. Qe1 {Ein typisches Angriffsmanöver: Die Dame verlässt die d-Linie und will über e1 nach h4 schwenken – direkt vor den schwarzen König.}
 Nbd7
-9. Qh4 {Da ist sie! Dame und Läufer zielen jetzt beide auf h7, der Turm auf f7. Alle weißen Figuren greifen an – genau so spielt man ein Gambit.}`,
+9. Qh4 {Da ist sie! Dame und Läufer zielen jetzt beide auf h7, und der Turm wartet auf der f-Linie. Alle weißen Figuren greifen an – genau so spielt man ein Gambit.}`,
   },
   {
     id: 'damengambit-angenommen',

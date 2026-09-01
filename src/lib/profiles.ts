@@ -9,15 +9,7 @@
  * geladen – kein Store braucht dadurch eigene Profil-Logik.
  */
 
-const REG_KEY = 'schach.profiles.v1'
-
-/** Alle profilgebundenen Live-Schlüssel der App. */
-const DATA_KEYS = [
-  'schach.settings.v1',
-  'schach.game.v1',
-  'schach.archive.v1',
-  'schach.lernpfad.v1',
-]
+import { PROFILE_DATA_KEYS as DATA_KEYS, PROFILE_REGISTRY_KEY as REG_KEY } from './storageKeys'
 
 export const DEFAULT_PROFILE = 'Spieler 1'
 export const MAX_PROFILES = 8
@@ -68,7 +60,11 @@ export function listProfiles(): string[] {
 }
 
 export function normalizeName(raw: string): string {
-  return raw.trim().slice(0, MAX_NAME_LENGTH)
+  // Nach Zeichen (Codepoints) kürzen, nicht nach UTF-16-Einheiten: Ein halbes
+  // Emoji würde encodeURIComponent() in storeKey() zum Absturz bringen.
+  // eslint-disable-next-line no-control-regex
+  const cleaned = raw.replace(/[\u0000-\u001f\u007f]/g, '').trim()
+  return Array.from(cleaned).slice(0, MAX_NAME_LENGTH).join('').trim()
 }
 
 /** Prüft, ob unter diesem Namen ein Profil angelegt werden kann. */
@@ -118,11 +114,25 @@ export function createProfile(raw: string): boolean {
 export function switchProfile(name: string) {
   const reg = loadRegistry()
   if (!reg.names.includes(name) || reg.active === name) return
-  stashLive(reg.active)
-  reg.active = name
-  saveRegistry(reg)
-  restoreLive(name)
-  location.reload()
+  const previous = reg.active
+  stashLive(previous)
+  try {
+    // Erst die Daten einspielen, dann das Register umstellen: Schlägt ein
+    // Schreibzugriff fehl (Speicher voll), bleibt das alte Profil aktiv …
+    restoreLive(name)
+    reg.active = name
+    saveRegistry(reg)
+  } catch {
+    // … und seine Daten kommen aus der gerade angelegten Ablage zurück.
+    try {
+      restoreLive(previous)
+    } catch {
+      /* so weit wie möglich */
+    }
+  } finally {
+    // In jedem Fall neu laden, damit kein Store gegen gemischte Daten weiterläuft.
+    location.reload()
+  }
 }
 
 /** Profil samt aller Daten löschen. Das aktive Profil ist nicht löschbar. */

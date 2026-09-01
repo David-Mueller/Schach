@@ -34,9 +34,15 @@ const flipped3d = computed(
  * chessground die z-Indizes bei jedem Render neu vergibt.
  */
 function applyPieceZ() {
-  if (!el.value || settings.boardStyle !== '3d') return
+  if (!el.value) return
   const boardEl = el.value.querySelector('cg-board')
   if (!boardEl) return
+  if (settings.boardStyle !== '3d') {
+    // Zurück in 2D: alte Inline-z-Indizes würden sonst die Tipp-Pfeile
+    // (.cg-shapes, z 9) auf den unteren Reihen verdecken.
+    boardEl.querySelectorAll<HTMLElement>('piece').forEach((p) => (p.style.zIndex = ''))
+    return
+  }
   const sq = boardEl.getBoundingClientRect().height / 8
   if (sq <= 0) return
   const flip = flipped3d.value
@@ -76,7 +82,7 @@ function tipShapes(): DrawShape[] {
 }
 
 function buildConfig(): Config {
-  return {
+  const cfg: Config = {
     fen: game.fen,
     orientation: game.orientation,
     turnColor: game.turnColor,
@@ -102,6 +108,13 @@ function buildConfig(): Config {
     // vorderen liegen, chessground vergibt dafür z-Indizes pro Reihe.
     addPieceZIndex: settings.boardStyle === '3d',
   }
+  if (game.pendingPromotion) {
+    // Während der Umwandlungsdialog offen ist, steht der Bauer schon auf der
+    // letzten Reihe; die alte FEN würde ihn zurück-animieren und danach wieder vor.
+    delete cfg.fen
+    delete cfg.lastMove
+  }
+  return cfg
 }
 
 // Chessground cached die Brett-Position (bounding box) und interpretiert Taps
@@ -119,7 +132,10 @@ onMounted(() => {
   api = Chessground(el.value, buildConfig())
   el.value.addEventListener('touchstart', clearBoundsCache, { capture: true, passive: true })
   el.value.addEventListener('mousedown', clearBoundsCache, { capture: true })
-  resizeObserver = new ResizeObserver(() => api?.redrawAll())
+  // Chessground reagiert selbst auf Größenänderungen (eigener ResizeObserver);
+  // hier nur die 3D-Staffelung nachziehen – redrawAll() würde das Brett-DOM
+  // bei jedem Resize (z. B. Adressleiste einklappen) komplett neu aufbauen.
+  resizeObserver = new ResizeObserver(() => schedulePieceZ())
   resizeObserver.observe(el.value)
   schedulePieceZ()
 })

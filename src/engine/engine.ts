@@ -67,7 +67,14 @@ interface Job {
   lines: Map<number, EngineLine>
   depth: number
   bestmove?: string
+  /** Per stop() abgebrochen: Promise ist bereits verworfen, wir warten nur noch auf bestmove. */
+  cancelled?: boolean
 }
+
+/** Nach so langer Funkstille bei einer Suche wird "stop" nachgeschoben … */
+const SEARCH_WATCHDOG_MS = 45_000
+/** … und wenn dann immer noch kein bestmove kommt, gilt die Engine als abgestürzt. */
+const STOP_GRACE_MS = 10_000
 
 interface JobResult {
   bestmove: string
@@ -92,11 +99,24 @@ export class Engine {
   private queue: Job[] = []
   private current: Job | null = null
   private initPromise: Promise<void> | null = null
+  private watchdog: ReturnType<typeof setTimeout> | null = null
 
   /** Startet Worker und wartet auf uciok. */
   init(): Promise<void> {
     if (this.initPromise) return this.initPromise
-    this.initPromise = new Promise((resolve, reject) => {
+    this.initPromise = this.startWorker().catch((err: unknown) => {
+      // Fehlstart nicht bis zum Neuladen festhalten: der nächste Aufruf
+      // (Tipp, Computerzug) darf einen frischen Worker versuchen.
+      this.worker?.terminate()
+      this.worker = null
+      this.initPromise = null
+      throw err
+    })
+    return this.initPromise
+  }
+
+  private startWorker(): Promise<void> {
+    return new Promise((resolve, reject) => {
       let settled = false
       try {
         this.worker = new Worker(`${import.meta.env.BASE_URL}engine/stockfish-18-lite-single.js`)
@@ -124,17 +144,22 @@ export class Engine {
       }
       this.worker.onmessage = (e: MessageEvent) => {
         const line = String(e.data)
-        if (!settled && line === 'uciok') {
+        if (line !== 'uciok') return
+        if (settled) {
+          // Kam nach dem Timeout doch noch: Engine ist brauchbar, also nicht
+          // bis zum Neuladen als tot behandeln.
+          this.initPromise = Promise.resolve()
+        } else {
           settled = true
           clearTimeout(timeout)
-          this.worker!.onmessage = (ev: MessageEvent) => this.handleLine(String(ev.data))
-          this.send('setoption name Use NNUE value true')
           resolve()
         }
+        this.worker!.onmessage = (ev: MessageEvent) => this.handleLine(String(ev.data))
+        this.send('setoption name Use NNUE value true')
+        this.pump()
       }
       this.send('uci')
     })
-    return this.initPromise
   }
 
   private send(cmd: string) {
@@ -166,16 +191,46 @@ export class Engine {
     const job = this.current
     if (!job) return
     this.current = null
-    const lines = [...job.lines.entries()].sort((a, b) => a[0] - b[0]).map(([, l]) => l)
-    job.resolve({ bestmove: job.bestmove ?? '(none)', lines, depth: job.depth })
+    this.clearWatchdog()
+    if (!job.cancelled) {
+      const lines = [...job.lines.entries()].sort((a, b) => a[0] - b[0]).map(([, l]) => l)
+      job.resolve({ bestmove: job.bestmove ?? '(none)', lines, depth: job.depth })
+    }
     this.pump()
   }
 
   private pump() {
-    if (this.current || this.queue.length === 0) return
+    if (this.current || this.queue.length === 0 || !this.worker) return
     this.current = this.queue.shift()!
     for (const cmd of this.current.commands) this.send(cmd)
     if (!this.current.waitsForBestmove) this.send('isready')
+    else this.armWatchdog()
+  }
+
+  /**
+   * Schutz gegen eine Suche, die nie antwortet (abgestürzter WASM-Thread):
+   * erst "stop" nachschieben, danach die Engine als tot behandeln – sonst
+   * bliebe »Computer denkt …« für immer stehen.
+   */
+  private armWatchdog() {
+    this.clearWatchdog()
+    this.watchdog = setTimeout(() => {
+      this.send('stop')
+      this.watchdog = setTimeout(() => this.crash(), STOP_GRACE_MS)
+    }, SEARCH_WATCHDOG_MS)
+  }
+
+  private clearWatchdog() {
+    if (this.watchdog) clearTimeout(this.watchdog)
+    this.watchdog = null
+  }
+
+  /** Engine reagiert nicht mehr: Worker beenden, alle Aufrufer informieren. */
+  private crash() {
+    this.failAll(new Error('Die Engine antwortet nicht mehr.'))
+    this.worker?.terminate()
+    this.worker = null
+    this.initPromise = null // nächster init() startet einen frischen Worker
   }
 
   private enqueue(commands: string[], waitsForBestmove: boolean): Promise<JobResult> {
@@ -195,15 +250,25 @@ export class Engine {
     const dropped = this.queue
     this.queue = []
     for (const job of dropped) job.reject(new EngineCancelled())
-    if (this.current?.waitsForBestmove) this.send('stop')
+    const cur = this.current
+    if (cur?.waitsForBestmove && !cur.cancelled) {
+      // Sofort verwerfen statt ein halbfertiges Ergebnis zu liefern – sonst
+      // landete eine Tiefe-2-Analyse als »fertig« im Cache. Auf bestmove
+      // warten wir trotzdem, damit der nächste Job nicht mit der laufenden
+      // Suche kollidiert.
+      cur.cancelled = true
+      cur.reject(new EngineCancelled())
+      this.send('stop')
+    }
   }
 
   /** Lässt alle offenen Jobs fehlschlagen (Worker-Absturz, dispose). */
   private failAll(err: Error) {
+    this.clearWatchdog()
     const jobs = [...(this.current ? [this.current] : []), ...this.queue]
     this.current = null
     this.queue = []
-    for (const job of jobs) job.reject(err)
+    for (const job of jobs) if (!job.cancelled) job.reject(err)
   }
 
   async newGame(): Promise<void> {
@@ -326,6 +391,8 @@ function parseInfoLine(
     }
   }
   const move = pv[0]
+  if (cp !== undefined && !Number.isFinite(cp)) cp = undefined
+  if (mate !== undefined && !Number.isFinite(mate)) mate = undefined
   if (!move || (cp === undefined && mate === undefined)) return null
   return { multipv, depth, bound, line: { move, cp, mate, pv } }
 }
