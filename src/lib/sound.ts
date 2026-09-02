@@ -6,7 +6,13 @@ let ctx: AudioContext | null = null
 function audioCtx(): AudioContext | null {
   try {
     if (!ctx) ctx = new AudioContext()
-    if (ctx.state === 'suspended') void ctx.resume()
+    if (ctx.state !== 'running') {
+      // 'suspended' (noch keine Nutzergeste) oder 'interrupted' (iOS nach Anruf/
+      // Hintergrund): wecken, aber jetzt nichts einplanen – sonst feuern alle
+      // aufgestauten Töne beim ersten Tipp auf einmal los.
+      void ctx.resume()
+      return null
+    }
     return ctx
   } catch {
     return null
@@ -50,6 +56,12 @@ export const sounds = {
     tone(659, 140, { gain: 0.14, delayMs: 130 })
     tone(784, 220, { gain: 0.16, delayMs: 260 })
     tone(1047, 350, { gain: 0.16, delayMs: 400 })
+  },
+  /** Partie verloren: kurze absteigende Folge (kein Triumph-Ton fürs Mattgesetztwerden). */
+  lose() {
+    tone(392, 160, { gain: 0.12 })
+    tone(311, 200, { gain: 0.12, delayMs: 150 })
+    tone(233, 320, { gain: 0.12, delayMs: 330 })
   },
   /** Ungültiger Zug / Warnung. */
   warn() {

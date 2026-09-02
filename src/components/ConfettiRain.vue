@@ -1,7 +1,22 @@
 <script setup lang="ts">
 // Leichter CSS-Konfettiregen (kein Canvas, keine Abhängigkeit).
 // Der Elternknoten bestimmt die Fläche (position: absolute, inset: 0).
-const props = withDefaults(defineProps<{ count?: number }>(), { count: 32 })
+// Endet nach einigen Sekunden von selbst – Dutzende endlos animierte Elemente
+// kosten auf dem Handy sonst dauerhaft Akku.
+import { onBeforeUnmount, onMounted, ref } from 'vue'
+
+const props = withDefaults(defineProps<{ count?: number; durationMs?: number }>(), {
+  count: 32,
+  durationMs: 7000,
+})
+const active = ref(true)
+let timer: ReturnType<typeof setTimeout> | null = null
+onMounted(() => {
+  timer = setTimeout(() => (active.value = false), props.durationMs)
+})
+onBeforeUnmount(() => {
+  if (timer) clearTimeout(timer)
+})
 
 const pieces = Array.from({ length: props.count }, (_, i) => ({
   left: `${(i * 41) % 100}%`,
@@ -12,7 +27,7 @@ const pieces = Array.from({ length: props.count }, (_, i) => ({
 </script>
 
 <template>
-  <div class="confetti" aria-hidden="true">
+  <div v-if="active" class="confetti" aria-hidden="true">
     <span
       v-for="(c, i) in pieces"
       :key="i"

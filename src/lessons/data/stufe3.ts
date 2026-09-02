@@ -48,6 +48,6 @@ Rc8 {Schwarz eilt mit dem Turm zur Hilfe und deckt den Springer.}
 2. d5 {Druck erhöhen! Der Bauer greift den gefesselten Springer ein zweites Mal an. Zwei Angreifer, ein Verteidiger – und weglaufen ist verboten.}
 Kd7 {Schwarz versucht in höchster Not, mit dem König die Fesselung aufzulösen.}
 3. dxc6+ {Zu spät! Der kleine Bauer schlägt den Springer – sogar mit Schach.}
-Kd8 {Zurückschlagen geht nicht: Der Bauer c6 wird vom Läufer b5 beschützt. Du hast eine ganze Figur gewonnen – die Fesselung hat sich gelohnt.}`,
+Kd8 {Zurückschlagen lohnt nicht: Nach Txc6 schlägt der Läufer b5 den Turm. Du hast eine ganze Figur gewonnen – die Fesselung hat sich gelohnt.}`,
   },
 ]

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { LEVELS } from '../../src/lessons/curriculum'
-import { collectErrors, prepare, tapMove, waitForStatus } from './helpers'
+import { type Coord, collectErrors, prepare, tapMove, waitForStatus } from './helpers'
 
 test.describe('Lernpfad (Fahrschule)', () => {
   test('Lektion mitspielen: Coach-Hinweise, Sterne, Ab-hier-weiterspielen', async ({ page }) => {
@@ -29,7 +29,7 @@ test.describe('Lernpfad (Fahrschule)', () => {
     await expect(page.locator('.lesson-task')).toContainText('Fast!')
 
     // Lektion durchspielen (weiße Züge); Gegnerzüge laufen automatisch
-    const whiteMoves: [number, number][][] = [
+    const whiteMoves: [Coord, Coord][] = [
       [[4, 2], [4, 4]], // e4
       [[6, 1], [5, 3]], // Sf3
       [[5, 1], [2, 4]], // Lc4
@@ -75,7 +75,7 @@ test.describe('Lernpfad (Fahrschule)', () => {
     await page.locator('.lesson-row .btn.primary').first().click()
     await expect(page.locator('.lesson-task')).toBeVisible({ timeout: 10_000 })
 
-    const whiteMoves: [number, number][][] = [
+    const whiteMoves: [Coord, Coord][] = [
       [[4, 2], [4, 4]], // e4
       [[6, 1], [5, 3]], // Sf3
       [[5, 1], [2, 4]], // Lc4

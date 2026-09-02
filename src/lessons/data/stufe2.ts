@@ -37,8 +37,8 @@ O-O`,
       'aufbauen kannst – egal was der Gegner spielt. Das Herzstück ist die ' +
       'Bauernpyramide c3, d4, e3 mit dem Läufer davor auf f4. Spiel die weißen Züge!',
     outro:
-      'Das Londoner Haus steht! Merk dir die Zugfolge: d4, Lf4, e3, Sf3, dann c3 ' +
-      'und Ld3. Mit diesem sicheren Aufbau kannst du gegen fast alles spielen.',
+      'Das Londoner Haus steht! Merk dir die Zugfolge: d4, Lf4, e3, Sf3, dann Ld3 ' +
+      'und c3. Mit diesem sicheren Aufbau kannst du gegen fast alles spielen.',
     pgn: `1. d4 {Der Damenbauer besetzt das Zentrum – der Startzug des Londoner Systems.}
 d5
 2. Bf4 {Der wichtigste Zug! Der Läufer kommt VOR die Bauernkette – spielst du erst e3, wäre er für immer eingesperrt.}

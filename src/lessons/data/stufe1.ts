@@ -69,12 +69,12 @@ O-O {Auch Schwarz versteckt seinen König. Ein König in der Mitte kassiert Scha
 Qa5 {Die Dame flieht. Dieser verlorene Zug heißt Tempoverlust – Schwarz hat zweimal gezogen und nichts entwickelt.}
 4. d4 {Während die Dame unterwegs war, schnappt sich Weiß in aller Ruhe das Zentrum.}
 Nf6
-5. Nf3 {Der zweite Springer kommt ins Spiel. Vergleich mal: Weiß entwickelt Figur um Figur, Schwarz hat bisher nur die Dame bewegt.}
+5. Nf3 {Der zweite Springer kommt ins Spiel. Vergleich mal: Weiß entwickelt Figur um Figur, Schwarz hat außer dem Springer f6 nur die Dame bewegt.}
 c6 {Schwarz muss der Dame vorsichtshalber ein Fluchtfeld bauen – noch ein Zug, der nichts entwickelt.}
 6. Bc4 Bf5
 7. Bd2 {Der Läufer schielt durch das Feld c3 heimlich zur Dame auf a5 hinüber – zieht der Springer irgendwann weg, muss sie schon wieder aufpassen.}
 e6
-8. O-O {Zähl mal nach: Weiß hat vier Figuren entwickelt und den König in Sicherheit gebracht. Die schwarze Dame ist dreimal gezogen und hat nichts erreicht.}`,
+8. O-O {Zähl mal nach: Weiß hat vier Figuren entwickelt und den König in Sicherheit gebracht. Die schwarze Dame ist zweimal gezogen und hat nichts erreicht.}`,
   },
   {
     id: 'grundschule-schaefermatt',

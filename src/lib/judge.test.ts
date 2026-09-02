@@ -228,3 +228,35 @@ describe('judgeMove – Vorzeichen, wenn Schwarz am Zug ist', () => {
     expect(j.text).toMatch(/Besser war e5\./)
   })
 })
+
+describe('judgeMove – verlorene Stellung (Gegner hat forciertes Matt)', () => {
+  // Weiß: Kh1, Bauern g2 h2; Schwarz: Kg8, Dd3, Te8 – Schwarz mattet in Kürze.
+  const fen = '4r1k1/8/8/8/8/3q4/6PP/7K w - - 0 1'
+
+  it('längstes Durchhalten wird nicht als Patzer bewertet', () => {
+    const before: EngineLine[] = [{ move: 'h1g1', mate: -3, pv: ['h1g1'] }]
+    const after: EngineLine[] = [{ move: 'd3d1', mate: 3, pv: ['d3d1'] }]
+    // g3 ist nicht der Engine-Zug, hält aber genauso lange durch.
+    const j = judgeMove(fen, 'g2g3', before, after)
+    expect(j.verdict).toBe('good')
+    expect(j.text).toMatch(/schon verloren/)
+  })
+
+  it('deutlich schnelleres Matt ist ein Fehler, aber kein »Grober Fehler«', () => {
+    const before: EngineLine[] = [{ move: 'h1g1', mate: -5, pv: ['h1g1'] }]
+    const after: EngineLine[] = [{ move: 'd3f1', mate: 1, pv: ['d3f1'] }]
+    const j = judgeMove(fen, 'g2g3', before, after)
+    expect(j.verdict).toBe('mistake')
+    expect(j.text).toMatch(/schneller/)
+  })
+
+  it('verpasstes Matt nennt den besseren Zug nur einmal', () => {
+    // Weiß: Kg1, Ta1; Schwarz: Kh8 – Ta8# ist Matt in 1.
+    const fen1 = '7k/8/8/8/8/8/6PP/R5K1 w - - 0 1'
+    const before: EngineLine[] = [{ move: 'a1a8', mate: 1, pv: ['a1a8'] }]
+    const after: EngineLine[] = [{ move: 'h8g8', cp: -900, pv: ['h8g8'] }]
+    const j = judgeMove(fen1, 'a1b1', before, after)
+    expect(j.text).toMatch(/Du hattest Matt in einem Zug!/)
+    expect(j.text.match(/Ta8/g)?.length).toBe(1)
+  })
+})

@@ -16,7 +16,7 @@ import {
   MAX_NAME_LENGTH,
   MAX_PROFILES,
 } from '../lib/profiles'
-import { downloadBackup, importBackupFile } from '../lib/backup'
+import { applyBackup, downloadBackup, readBackupFile, type BackupEntries } from '../lib/backup'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
@@ -30,15 +30,24 @@ const profiles = ref<string[]>([])
 const active = ref('')
 watch(
   () => props.open,
-  (open) => {
+  (open, _prev, onCleanup) => {
     if (open) {
       archive.value = listGames()
       profiles.value = listProfiles()
       active.value = activeProfile()
     }
+    // Escape schließt das Panel (Tastatur/Desktop). Das Cleanup läuft auch
+    // beim Unmount, damit kein globaler Listener hängen bleibt.
+    if (open) {
+      window.addEventListener('keydown', onKeydown)
+      onCleanup(() => window.removeEventListener('keydown', onKeydown))
+    }
   },
   { immediate: true },
 )
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') emit('close')
+}
 
 // ---------- Profile ----------
 const newProfileName = ref('')
@@ -71,14 +80,23 @@ async function onImportBackup(event: Event) {
   const file = input.files?.[0]
   input.value = '' // gleiche Datei später erneut wählbar
   if (!file) return
-  if (!confirm('Backup einspielen? Alle Profile und Spielstände auf diesem Gerät werden ersetzt.'))
-    return
   importError.value = null
-  game.prepareProfileChange()
+  // Erst lesen und prüfen – bei einer ungültigen Datei darf nichts angehalten werden.
+  let entries: BackupEntries
   try {
-    await importBackupFile(file) // lädt die Seite neu
+    entries = await readBackupFile(file)
   } catch (e) {
     importError.value = e instanceof Error ? e.message : 'Backup konnte nicht gelesen werden.'
+    return
+  }
+  if (!confirm('Backup einspielen? Alle Profile und Spielstände auf diesem Gerät werden ersetzt.'))
+    return
+  game.prepareProfileChange()
+  try {
+    applyBackup(entries) // lädt die Seite neu
+  } catch (e) {
+    importError.value = e instanceof Error ? e.message : 'Backup konnte nicht eingespielt werden.'
+    game.maybeEngineMove() // Engine war angehalten – Partie weiterlaufen lassen
   }
 }
 
@@ -115,9 +133,9 @@ function startNewGame() {
 
 <template>
   <div v-if="open" class="overlay" @click.self="emit('close')">
-    <div class="panel">
+    <div class="panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
       <div class="head">
-        <h2>Einstellungen</h2>
+        <h2 id="settings-title">Einstellungen</h2>
         <button class="btn subtle" aria-label="Schließen" @click="emit('close')">✕</button>
       </div>
 
@@ -161,10 +179,18 @@ function startNewGame() {
       <section>
         <h3>Spielmodus</h3>
         <div class="seg">
-          <button :class="{ active: settings.mode === 'ai' }" @click="settings.mode = 'ai'">
+          <button
+            :class="{ active: settings.mode === 'ai' }"
+            :aria-pressed="settings.mode === 'ai'"
+            @click="settings.mode = 'ai'"
+          >
             Gegen Computer
           </button>
-          <button :class="{ active: settings.mode === 'pvp' }" @click="settings.mode = 'pvp'">
+          <button
+            :class="{ active: settings.mode === 'pvp' }"
+            :aria-pressed="settings.mode === 'pvp'"
+            @click="settings.mode = 'pvp'"
+          >
             Zu zweit (ein Gerät)
           </button>
         </div>
@@ -224,10 +250,18 @@ function startNewGame() {
       <section>
         <h3>Aussehen</h3>
         <div class="seg">
-          <button :class="{ active: settings.boardStyle === '2d' }" @click="settings.boardStyle = '2d'">
+          <button
+            :class="{ active: settings.boardStyle === '2d' }"
+            :aria-pressed="settings.boardStyle === '2d'"
+            @click="settings.boardStyle = '2d'"
+          >
             2D klassisch
           </button>
-          <button :class="{ active: settings.boardStyle === '3d' }" @click="settings.boardStyle = '3d'">
+          <button
+            :class="{ active: settings.boardStyle === '3d' }"
+            :aria-pressed="settings.boardStyle === '3d'"
+            @click="settings.boardStyle = '3d'"
+          >
             3D-Figuren
           </button>
         </div>
@@ -245,13 +279,14 @@ function startNewGame() {
         </label>
       </section>
 
-      <p class="hint">Spielmodus, Farbe und Tipp-Anzahl gelten ab der nächsten Partie.</p>
+      <p class="hint">Die Tipp-Anzahl gilt ab der nächsten Partie; alles andere wirkt sofort.</p>
 
       <div class="actions">
         <button class="btn primary" @click="startNewGame">Neue Partie starten</button>
         <button
           class="btn"
-          :disabled="game.movesSan.length === 0 || game.blunderPrompt || game.pattPrompt"
+          :disabled="game.movesSan.length === 0 || game.blunderPrompt || !!game.pattPrompt || !!game.review"
+          :title="game.review ? 'Im Rückblick bitte den PGN-Knopf im Archiv nutzen' : undefined"
           @click="downloadPgn(game.exportPgn())"
         >
           Partie als PGN exportieren
@@ -316,7 +351,7 @@ function startNewGame() {
   width: min(360px, 92vw);
   background: var(--bg);
   border-left: 1px solid var(--border);
-  padding: 14px 16px calc(20px + env(safe-area-inset-bottom));
+  padding: calc(14px + env(safe-area-inset-top)) 16px calc(20px + env(safe-area-inset-bottom));
   overflow-y: auto;
 }
 .head {

@@ -9,13 +9,14 @@
     "preview": "vite preview",
     "test": "vitest run",
     "postinstall": "node scripts/copy-engine.mjs",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.e2e.json"
   },
   "dependencies": {
     "chess.js": "^1.4.0",
     "chessground": "^9.2.1",
     "pinia": "^4.0.3",
-    "stockfish": "^18.0.8",
+    "stockfish": "18.0.8",
     "vue": "^3.5.42"
   },
   "devDependencies": {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import ChessBoard from './components/ChessBoard.vue'
 import EvalBar from './components/EvalBar.vue'
 import MaterialBar from './components/MaterialBar.vue'
@@ -12,6 +12,7 @@ import LessonPath from './components/LessonPath.vue'
 import { useGame } from './stores/game'
 import { useSettings } from './stores/settings'
 import { activeProfile } from './lib/profiles'
+import { PROFILE_REGISTRY_KEY } from './lib/storageKeys'
 
 // Profilwechsel lädt die Seite neu, daher reicht ein einmaliges Auslesen.
 const profileName = activeProfile()
@@ -36,6 +37,27 @@ function toggleFullscreen() {
 
 // Einmalige Meldung, sobald der Service Worker alles für Offline gecacht hat.
 const offlineReady = ref(false)
+// Neues Build liegt bereit: sofort anwenden, wenn nichts verloren gehen kann,
+// sonst als Hinweis mit Knopf anbieten.
+const updateReady = ref(false)
+const safeToReload = computed(
+  () =>
+    !game.lesson &&
+    !game.review &&
+    !game.thinking &&
+    !game.analyzing &&
+    !game.pendingPromotion &&
+    !game.blunderPrompt &&
+    !game.pattPrompt &&
+    (game.status !== 'playing' || game.movesSan.length === 0),
+)
+function applyUpdate() {
+  updateReady.value = false
+  window.dispatchEvent(new CustomEvent('schach:apply-update'))
+}
+watch([updateReady, safeToReload], ([ready, safe]) => {
+  if (ready && safe) applyUpdate()
+})
 
 onMounted(() => {
   void game.initApp()
@@ -46,6 +68,14 @@ onMounted(() => {
     offlineReady.value = true
     setTimeout(() => (offlineReady.value = false), 8000)
   })
+  window.addEventListener('schach:update-ready', () => {
+    updateReady.value = true
+  })
+  // Zweiter Tab/PWA-Fenster hat das Profil gewechselt: Diese Seite würde ihren
+  // Spielstand sonst in die Live-Schlüssel des anderen Profils schreiben.
+  window.addEventListener('storage', (e) => {
+    if (e.key === PROFILE_REGISTRY_KEY && activeProfile() !== profileName) location.reload()
+  })
 })
 
 const verdictClass = computed(() => (game.feedback ? `verdict-${game.feedback.verdict}` : ''))
@@ -55,9 +85,12 @@ const tipCountLabel = computed(() => (game.tipsUnlimited ? '∞' : String(game.t
 const tipDisabled = computed(
   () =>
     game.status !== 'playing' ||
+    !!game.engineError ||
     !game.isPlayersTurn ||
     game.analyzing ||
     game.blunderPrompt ||
+    !!game.pattPrompt ||
+    !!game.pendingPromotion ||
     (!game.tipsUnlimited && game.tipsLeft === 0) ||
     game.tipStage >= 3,
 )
@@ -75,7 +108,10 @@ const statusLine = computed(() => {
     return game.isPlayersTurn ? 'Du bist dran – spiel den Lektionszug!' : 'Der Gegner zieht …'
   }
   if (game.status !== 'playing') return null
-  if (game.thinking) return 'Computer denkt …'
+  // Auch während der Bewertung des eigenen Zugs (vor der Engine-Antwort) ist
+  // der Computer »dran« – sonst bliebe die Zeile für ein paar Sekunden leer.
+  if (game.thinking || (game.effectiveMode === 'ai' && game.turnColor !== game.effectivePlayerColor))
+    return game.inCheck ? 'Schach! Computer denkt …' : 'Computer denkt …'
   if (game.inCheck) return 'Schach!'
   if (game.effectiveMode === 'pvp')
     return game.turnColor === 'white' ? 'Weiß ist am Zug' : 'Schwarz ist am Zug'
@@ -277,6 +313,12 @@ function confirmNewGame() {
     <transition name="toast">
       <div v-if="offlineReady" class="offline-toast">
         ✓ Bereit für Offline-Spiel – die App funktioniert jetzt auch ohne Internet.
+      </div>
+    </transition>
+    <transition name="toast">
+      <div v-if="updateReady && !safeToReload" class="offline-toast update-toast">
+        <span>🔄 Neue Version bereit – sie wird nach der Partie geladen.</span>
+        <button class="btn small" @click="applyUpdate">Jetzt laden</button>
       </div>
     </transition>
 
@@ -528,6 +570,17 @@ h1 {
   max-width: 92vw;
   z-index: 60;
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
+}
+.update-toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  bottom: calc(64px + env(safe-area-inset-bottom));
+}
+.update-toast .btn {
+  flex-shrink: 0;
+  padding: 5px 10px;
+  font-size: 12.5px;
 }
 .toast-enter-active,
 .toast-leave-active {

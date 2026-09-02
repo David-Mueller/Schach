@@ -18,10 +18,17 @@ const game = useGame()
 const progress = ref<Record<string, LessonResult>>({})
 const activeLevel = ref(0)
 
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') emit('close')
+}
+
 watch(
   () => props.open,
-  (open) => {
+  (open, _prev, onCleanup) => {
     if (!open) return
+    // Escape schließt das Panel; Cleanup greift auch beim Unmount.
+    window.addEventListener('keydown', onKeydown)
+    onCleanup(() => window.removeEventListener('keydown', onKeydown))
     progress.value = getProgress()
     // Automatisch das erste freigeschaltete Level mit offenen Sternen zeigen.
     let pick = 0
@@ -36,8 +43,8 @@ watch(
 )
 
 function stars(id: string): string {
-  const s = progress.value[id]?.stars ?? 0
-  return '★'.repeat(s) + '☆'.repeat(Math.max(0, 3 - s))
+  const s = Math.min(3, Math.max(0, Math.floor(progress.value[id]?.stars ?? 0)))
+  return '★'.repeat(s) + '☆'.repeat(3 - s)
 }
 
 function unlocked(levelIndex: number): boolean {
@@ -76,9 +83,9 @@ function start(id: string, mode: 'demo' | 'play') {
 
 <template>
   <div v-if="open" class="overlay" @click.self="emit('close')">
-    <div class="panel">
+    <div class="panel" role="dialog" aria-modal="true" aria-labelledby="lessonpath-title">
       <div class="head">
-        <h2>🎓 Lernpfad</h2>
+        <h2 id="lessonpath-title">🎓 Lernpfad</h2>
         <span class="total-stars" title="Gesammelte Sterne in diesem Level">⭐ {{ starsLabel }}</span>
         <button class="btn subtle" aria-label="Schließen" @click="emit('close')">✕</button>
       </div>
@@ -90,6 +97,7 @@ function start(id: string, mode: 'demo' | 'play') {
           :key="lvl.id"
           class="level-tab"
           :class="{ active: activeLevel === i, 'tab-locked': !unlocked(i) }"
+          :aria-pressed="activeLevel === i"
           @click="activeLevel = i"
         >
           <span class="level-name">{{ unlocked(i) ? '' : '🔒 ' }}{{ lvl.title }}</span>
@@ -126,7 +134,7 @@ function start(id: string, mode: 'demo' | 'play') {
                 </span>
               </div>
               <div class="lesson-buttons">
-                <button class="btn small" @click="start(id, 'demo')">🎬</button>
+                <button class="btn small" aria-label="Als Film ansehen" title="Als Film ansehen" @click="start(id, 'demo')">🎬</button>
                 <button class="btn small primary" @click="start(id, 'play')">▶ Üben</button>
               </div>
             </div>
@@ -152,7 +160,7 @@ function start(id: string, mode: 'demo' | 'play') {
 .panel {
   width: min(430px, 100vw);
   background: var(--bg);
-  padding: 14px 16px calc(20px + env(safe-area-inset-bottom));
+  padding: calc(14px + env(safe-area-inset-top)) 16px calc(20px + env(safe-area-inset-bottom));
   overflow-y: auto;
 }
 .head {

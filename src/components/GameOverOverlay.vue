@@ -1,12 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useGame } from '../stores/game'
-import { useSettings } from '../stores/settings'
 import { downloadPgn } from '../lib/pgnExport'
 import ConfettiRain from './ConfettiRain.vue'
 
 const game = useGame()
-const settings = useSettings()
 const hidden = ref(false)
 
 watch(
@@ -20,8 +18,13 @@ const visible = computed(
   () => game.status !== 'playing' && !hidden.value && !game.lesson && !game.review,
 )
 
+// effectiveMode/-PlayerColor statt der rohen Einstellung: Nach »Ab hier
+// weiterspielen« aus einer Lektion spielt der Computer ggf. mit anderer Farbe.
 const playerWon = computed(
-  () => settings.mode === 'ai' && game.winner === settings.playerColor && game.status === 'checkmate',
+  () =>
+    game.effectiveMode === 'ai' &&
+    game.winner === game.effectivePlayerColor &&
+    game.status === 'checkmate',
 )
 
 const title = computed(() => {
@@ -41,7 +44,7 @@ const title = computed(() => {
 
 const subtitle = computed(() => {
   if (playerWon.value) return 'Super gespielt! 🎉'
-  if (game.status === 'checkmate' && settings.mode === 'ai') return 'Kopf hoch – aus jeder Partie lernst du etwas!'
+  if (game.status === 'checkmate' && game.effectiveMode === 'ai') return 'Kopf hoch – aus jeder Partie lernst du etwas!'
   return ''
 })
 

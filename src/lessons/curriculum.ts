@@ -24,6 +24,8 @@ const allLessons: Lesson[] = [
 ]
 
 export const LESSONS = new Map<string, Lesson>(allLessons.map((l) => [l.id, l]))
+/** Anzahl der Lektionsdatensätze (vor Deduplizierung – für den ID-Kollisionstest). */
+export const LESSON_COUNT = allLessons.length
 
 /** Eine Seite des Lernpfads: Level 1 (Grundausbildung), Level 2 (Meisterklasse) … */
 export interface Level {

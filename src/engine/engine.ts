@@ -67,12 +67,27 @@ interface Job {
   lines: Map<number, EngineLine>
   depth: number
   bestmove?: string
+  /** Per stop() abgebrochen: Promise ist bereits verworfen, wir warten nur noch auf bestmove. */
+  cancelled?: boolean
 }
+
+/** Nach so langer Funkstille bei einer Suche wird "stop" nachgeschoben … */
+const SEARCH_WATCHDOG_MS = 45_000
+/** … und wenn dann immer noch kein bestmove kommt, gilt die Engine als abgestürzt. */
+const STOP_GRACE_MS = 10_000
 
 interface JobResult {
   bestmove: string
   lines: EngineLine[]
   depth: number
+}
+
+/** Ein Job wurde per stop()/dispose() verworfen, bevor die Engine antwortete. */
+export class EngineCancelled extends Error {
+  constructor() {
+    super('Engine-Anfrage abgebrochen')
+    this.name = 'EngineCancelled'
+  }
 }
 
 /**
@@ -84,11 +99,24 @@ export class Engine {
   private queue: Job[] = []
   private current: Job | null = null
   private initPromise: Promise<void> | null = null
+  private watchdog: ReturnType<typeof setTimeout> | null = null
 
   /** Startet Worker und wartet auf uciok. */
   init(): Promise<void> {
     if (this.initPromise) return this.initPromise
-    this.initPromise = new Promise((resolve, reject) => {
+    this.initPromise = this.startWorker().catch((err: unknown) => {
+      // Fehlstart nicht bis zum Neuladen festhalten: der nächste Aufruf
+      // (Tipp, Computerzug) darf einen frischen Worker versuchen.
+      this.worker?.terminate()
+      this.worker = null
+      this.initPromise = null
+      throw err
+    })
+    return this.initPromise
+  }
+
+  private startWorker(): Promise<void> {
+    return new Promise((resolve, reject) => {
       let settled = false
       try {
         this.worker = new Worker(`${import.meta.env.BASE_URL}engine/stockfish-18-lite-single.js`)
@@ -103,25 +131,35 @@ export class Engine {
         }
       }, 30000)
       this.worker.onerror = (e) => {
+        const err = new Error(`Engine-Worker-Fehler: ${e.message}`)
         if (!settled) {
           settled = true
           clearTimeout(timeout)
-          reject(new Error(`Engine-Worker-Fehler: ${e.message}`))
+          reject(err)
+          return
         }
+        // Absturz mitten im Spiel (z. B. Speichermangel): Wartende Aufrufer
+        // dürfen nicht ewig hängen – sie melden den Fehler dann in der UI.
+        this.failAll(err)
       }
       this.worker.onmessage = (e: MessageEvent) => {
         const line = String(e.data)
-        if (!settled && line === 'uciok') {
+        if (line !== 'uciok') return
+        if (settled) {
+          // Kam nach dem Timeout doch noch: Engine ist brauchbar, also nicht
+          // bis zum Neuladen als tot behandeln.
+          this.initPromise = Promise.resolve()
+        } else {
           settled = true
           clearTimeout(timeout)
-          this.worker!.onmessage = (ev: MessageEvent) => this.handleLine(String(ev.data))
-          this.send('setoption name Use NNUE value true')
           resolve()
         }
+        this.worker!.onmessage = (ev: MessageEvent) => this.handleLine(String(ev.data))
+        this.send('setoption name Use NNUE value true')
+        this.pump()
       }
       this.send('uci')
     })
-    return this.initPromise
   }
 
   private send(cmd: string) {
@@ -134,7 +172,11 @@ export class Engine {
     if (line.startsWith('info ') && line.includes(' pv ')) {
       const parsed = parseInfoLine(line)
       if (parsed) {
-        job.lines.set(parsed.multipv, parsed.line)
+        // Zwischenstände mit Schranken (lowerbound/upperbound) sind ungenau;
+        // sie zählen nur, solange noch keine exakte Linie vorliegt.
+        if (!parsed.bound || !job.lines.has(parsed.multipv)) {
+          job.lines.set(parsed.multipv, parsed.line)
+        }
         job.depth = Math.max(job.depth, parsed.depth)
       }
     } else if (line.startsWith('bestmove')) {
@@ -149,16 +191,46 @@ export class Engine {
     const job = this.current
     if (!job) return
     this.current = null
-    const lines = [...job.lines.entries()].sort((a, b) => a[0] - b[0]).map(([, l]) => l)
-    job.resolve({ bestmove: job.bestmove ?? '(none)', lines, depth: job.depth })
+    this.clearWatchdog()
+    if (!job.cancelled) {
+      const lines = [...job.lines.entries()].sort((a, b) => a[0] - b[0]).map(([, l]) => l)
+      job.resolve({ bestmove: job.bestmove ?? '(none)', lines, depth: job.depth })
+    }
     this.pump()
   }
 
   private pump() {
-    if (this.current || this.queue.length === 0) return
+    if (this.current || this.queue.length === 0 || !this.worker) return
     this.current = this.queue.shift()!
     for (const cmd of this.current.commands) this.send(cmd)
     if (!this.current.waitsForBestmove) this.send('isready')
+    else this.armWatchdog()
+  }
+
+  /**
+   * Schutz gegen eine Suche, die nie antwortet (abgestürzter WASM-Thread):
+   * erst "stop" nachschieben, danach die Engine als tot behandeln – sonst
+   * bliebe »Computer denkt …« für immer stehen.
+   */
+  private armWatchdog() {
+    this.clearWatchdog()
+    this.watchdog = setTimeout(() => {
+      this.send('stop')
+      this.watchdog = setTimeout(() => this.crash(), STOP_GRACE_MS)
+    }, SEARCH_WATCHDOG_MS)
+  }
+
+  private clearWatchdog() {
+    if (this.watchdog) clearTimeout(this.watchdog)
+    this.watchdog = null
+  }
+
+  /** Engine reagiert nicht mehr: Worker beenden, alle Aufrufer informieren. */
+  private crash() {
+    this.failAll(new Error('Die Engine antwortet nicht mehr.'))
+    this.worker?.terminate()
+    this.worker = null
+    this.initPromise = null // nächster init() startet einen frischen Worker
   }
 
   private enqueue(commands: string[], waitsForBestmove: boolean): Promise<JobResult> {
@@ -168,9 +240,35 @@ export class Engine {
     })
   }
 
-  /** Bricht die laufende Suche ab (der Job löst dann über bestmove auf). */
+  /**
+   * Bricht die laufende Suche ab (der Job löst dann über bestmove auf) und
+   * verwirft alle noch wartenden Jobs – deren Aufrufer haben die Antwort
+   * (per Generationszähler) ohnehin nicht mehr gebraucht. So kommt z. B. der
+   * Computerzug nach »Neue Partie« nicht hinter veralteten Analysen dran.
+   */
   stop() {
-    if (this.current?.waitsForBestmove) this.send('stop')
+    const dropped = this.queue
+    this.queue = []
+    for (const job of dropped) job.reject(new EngineCancelled())
+    const cur = this.current
+    if (cur?.waitsForBestmove && !cur.cancelled) {
+      // Sofort verwerfen statt ein halbfertiges Ergebnis zu liefern – sonst
+      // landete eine Tiefe-2-Analyse als »fertig« im Cache. Auf bestmove
+      // warten wir trotzdem, damit der nächste Job nicht mit der laufenden
+      // Suche kollidiert.
+      cur.cancelled = true
+      cur.reject(new EngineCancelled())
+      this.send('stop')
+    }
+  }
+
+  /** Lässt alle offenen Jobs fehlschlagen (Worker-Absturz, dispose). */
+  private failAll(err: Error) {
+    this.clearWatchdog()
+    const jobs = [...(this.current ? [this.current] : []), ...this.queue]
+    this.current = null
+    this.queue = []
+    for (const job of jobs) if (!job.cancelled) job.reject(err)
   }
 
   async newGame(): Promise<void> {
@@ -249,20 +347,22 @@ export class Engine {
   }
 
   dispose() {
+    this.failAll(new EngineCancelled())
     this.worker?.terminate()
     this.worker = null
     this.initPromise = null
-    this.current = null
-    this.queue = []
   }
 }
 
-function parseInfoLine(line: string): { multipv: number; depth: number; line: EngineLine } | null {
+function parseInfoLine(
+  line: string,
+): { multipv: number; depth: number; bound: boolean; line: EngineLine } | null {
   const tokens = line.split(/\s+/)
   let multipv = 1
   let depth = 0
   let cp: number | undefined
   let mate: number | undefined
+  let bound = false
   let pv: string[] = []
   for (let i = 0; i < tokens.length; i++) {
     switch (tokens[i]) {
@@ -277,6 +377,11 @@ function parseInfoLine(line: string): { multipv: number; depth: number; line: En
         const value = Number(tokens[++i])
         if (kind === 'cp') cp = value
         else if (kind === 'mate') mate = value
+        const next = tokens[i + 1]
+        if (next === 'lowerbound' || next === 'upperbound') {
+          bound = true
+          i++
+        }
         break
       }
       case 'pv':
@@ -286,8 +391,10 @@ function parseInfoLine(line: string): { multipv: number; depth: number; line: En
     }
   }
   const move = pv[0]
+  if (cp !== undefined && !Number.isFinite(cp)) cp = undefined
+  if (mate !== undefined && !Number.isFinite(mate)) mate = undefined
   if (!move || (cp === undefined && mate === undefined)) return null
-  return { multipv, depth, line: { move, cp, mate, pv } }
+  return { multipv, depth, bound, line: { move, cp, mate, pv } }
 }
 
 /** Eine gemeinsame Engine-Instanz für die ganze App (Single-Thread, wenig RAM). */
