@@ -16,7 +16,7 @@ import {
   MAX_NAME_LENGTH,
   MAX_PROFILES,
 } from '../lib/profiles'
-import { applyBackup, downloadBackup, readBackupFile } from '../lib/backup'
+import { applyBackup, downloadBackup, readBackupFile, type BackupEntries } from '../lib/backup'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
@@ -30,15 +30,18 @@ const profiles = ref<string[]>([])
 const active = ref('')
 watch(
   () => props.open,
-  (open) => {
+  (open, _prev, onCleanup) => {
     if (open) {
       archive.value = listGames()
       profiles.value = listProfiles()
       active.value = activeProfile()
     }
-    // Escape schließt das Panel (Tastatur/Desktop).
-    if (open) window.addEventListener('keydown', onKeydown)
-    else window.removeEventListener('keydown', onKeydown)
+    // Escape schließt das Panel (Tastatur/Desktop). Das Cleanup läuft auch
+    // beim Unmount, damit kein globaler Listener hängen bleibt.
+    if (open) {
+      window.addEventListener('keydown', onKeydown)
+      onCleanup(() => window.removeEventListener('keydown', onKeydown))
+    }
   },
   { immediate: true },
 )
@@ -79,7 +82,7 @@ async function onImportBackup(event: Event) {
   if (!file) return
   importError.value = null
   // Erst lesen und prüfen – bei einer ungültigen Datei darf nichts angehalten werden.
-  let entries
+  let entries: BackupEntries
   try {
     entries = await readBackupFile(file)
   } catch (e) {

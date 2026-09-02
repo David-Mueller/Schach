@@ -24,10 +24,11 @@ function onKeydown(e: KeyboardEvent) {
 
 watch(
   () => props.open,
-  (open) => {
-    if (open) window.addEventListener('keydown', onKeydown)
-    else window.removeEventListener('keydown', onKeydown)
+  (open, _prev, onCleanup) => {
     if (!open) return
+    // Escape schließt das Panel; Cleanup greift auch beim Unmount.
+    window.addEventListener('keydown', onKeydown)
+    onCleanup(() => window.removeEventListener('keydown', onKeydown))
     progress.value = getProgress()
     // Automatisch das erste freigeschaltete Level mit offenen Sternen zeigen.
     let pick = 0
