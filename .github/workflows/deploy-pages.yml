@@ -1,0 +1,81 @@
+# Baut die SchachTrainer-App und veröffentlicht sie auf GitHub Pages.
+#
+# Voraussetzung (einmalig): Settings → Pages → Source: "GitHub Actions".
+# Der Schritt "Configure Pages" versucht das automatisch zu aktivieren.
+#
+# Die App liegt dann unter https://<owner>.github.io/<repo>/ – der Unterpfad
+# wird über BASE_PATH an Vite durchgereicht (siehe vite.config.ts), damit
+# Assets, Engine-Worker, PWA-Manifest und Service Worker korrekt aufgelöst werden.
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Nur ein Deployment gleichzeitig; laufende Deployments nicht abbrechen,
+# damit kein halbfertiger Stand online geht.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        # postinstall kopiert die Stockfish-WASM-Engine nach public/engine
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Build
+        env:
+          # z. B. "/Schach/" für Projekt-Seiten, "/" für <owner>.github.io
+          BASE_PATH: ${{ steps.pages.outputs.base_path }}/
+        run: pnpm build
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

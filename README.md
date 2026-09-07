@@ -115,6 +115,19 @@ Statischer Build (`dist/`) — z. B. auf Coolify als Static Site unter
 nutzt bewusst die Single-Thread-Engine, die ohne COOP/COEP auskommt und auf
 Mobilgeräten zuverlässig läuft.
 
+### GitHub Pages
+
+Der Workflow `.github/workflows/deploy-pages.yml` baut die App bei jedem Push
+auf `main` (oder manuell über „Run workflow“) und veröffentlicht sie unter
+`https://david-mueller.github.io/Schach/`. Ablauf: Typecheck → Unit-Tests →
+Build → Deploy. Der Unterpfad `/Schach/` wird über `BASE_PATH` an Vite
+durchgereicht, sodass Engine-Worker, 3D-Figuren, Manifest und Service Worker
+auch dort korrekt geladen werden.
+
+Einmalige Voraussetzung: In den Repository-Einstellungen unter
+**Settings → Pages → Build and deployment → Source** muss „GitHub Actions“
+gewählt sein (der Workflow versucht das beim ersten Lauf selbst zu aktivieren).
+
 ## Architektur
 
 ```mermaid
